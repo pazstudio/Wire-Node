@@ -1,0 +1,36 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: wirenode
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-wirenode}
+      POSTGRES_DB: wirenode
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wirenode -d wirenode"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  app:
+    # Uses this image if it exists (e.g. loaded with `docker load`), otherwise builds it.
+    image: wire-node-app:latest
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://wirenode:${POSTGRES_PASSWORD:-wirenode}@db:5432/wirenode?schema=public
+      UPLOAD_DIR: /data/uploads
+      PORT: 8080
+    ports:
+      - "8080:8080"
+    volumes:
+      - uploads:/data/uploads
+
+volumes:
+  pgdata:
+  uploads:

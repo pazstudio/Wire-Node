@@ -1,0 +1,165 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// A machine project. PCBs are attached to projects; connections and zones belong to one project.
+model Project {
+  id          String       @id @default(uuid())
+  name        String
+  machine     String       @default("")
+  description String       @default("")
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  pcbs        ProjectPcb[]
+  connections Connection[]
+  zones       Zone[]
+}
+
+/// Library PCB (shared between projects). Image is stored on the uploads volume.
+model Pcb {
+  id          String         @id @default(uuid())
+  name        String
+  description String         @default("")
+  imagePath   String
+  thumbPath   String
+  imageWidth  Int
+  imageHeight Int
+  createdAt   DateTime       @default(now())
+  projects    ProjectPcb[]
+  connectors  PcbConnector[]
+}
+
+/// PCB attached to a project, with its block position on the project map.
+model ProjectPcb {
+  projectId String
+  pcbId     String
+  mapX      Float   @default(0)
+  mapY      Float   @default(0)
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  pcb       Pcb     @relation(fields: [pcbId], references: [id], onDelete: Cascade)
+
+  @@id([projectId, pcbId])
+}
+
+/// Library connector part (e.g. "JST-XH 4P").
+model ConnectorType {
+  id        String           @id @default(uuid())
+  name      String
+  pinCount  Int
+  rowCount  Int              @default(1)
+  crimpName String           @default("")
+  imagePath String?
+  thumbPath String?
+  createdAt DateTime         @default(now())
+  instances PcbConnector[]
+  nodes     ConnectionNode[]
+}
+
+/// A connector drawn as a rectangle on a PCB photo.
+/// x/y/w/h are normalized (0..1) relative to the image size, so they render
+/// at the same spot on any screen size.
+/// pins: [{ n: number, name: string, color: string }]
+model PcbConnector {
+  id              String           @id @default(uuid())
+  pcbId           String
+  connectorTypeId String?
+  label           String           @default("")
+  /// What the connector is for on this board, e.g. "Power", "Temperature sensor".
+  name            String           @default("")
+  x               Float
+  y               Float
+  w               Float
+  h               Float
+  rotation        Float            @default(0)
+  pins            Json             @default("[]")
+  updatedAt       DateTime         @updatedAt
+  pcb             Pcb              @relation(fields: [pcbId], references: [id], onDelete: Cascade)
+  connectorType   ConnectorType?   @relation(fields: [connectorTypeId], references: [id], onDelete: SetNull)
+  nodes           ConnectionNode[]
+}
+
+/// Library cable. cores: [{ color: string }]
+model Cable {
+  id          String   @id @default(uuid())
+  name        String
+  description String   @default("")
+  coreCount   Int
+  cores       Json     @default("[]")
+  shielded    Boolean  @default(false)
+  gauge       String   @default("")
+  lengthMm    Float?
+  createdAt   DateTime @default(now())
+  wires       Wire[]
+}
+
+/// A connection (direct or harness) inside a project: a graph of connector nodes and pin-to-pin wires.
+model Connection {
+  id          String           @id @default(uuid())
+  projectId   String
+  name        String
+  description String           @default("")
+  kind        String           @default("direct")
+  /// Cable length of the whole connection in mm. Wires can override it (harness branches).
+  lengthMm    Float?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  project     Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  nodes       ConnectionNode[]
+  wires       Wire[]
+}
+
+/// A connector placed in a connection diagram. Either references a connector drawn
+/// on a PCB, or is a "free" connector (inline harness connector / splice).
+model ConnectionNode {
+  id              String         @id @default(uuid())
+  connectionId    String
+  pcbConnectorId  String?
+  connectorTypeId String?
+  label           String         @default("")
+  pinCount        Int            @default(0)
+  x               Float          @default(0)
+  y               Float          @default(0)
+  connection      Connection     @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  pcbConnector    PcbConnector?  @relation(fields: [pcbConnectorId], references: [id], onDelete: Cascade)
+  connectorType   ConnectorType? @relation(fields: [connectorTypeId], references: [id], onDelete: SetNull)
+  wiresFrom       Wire[]         @relation("WireFrom")
+  wiresTo         Wire[]         @relation("WireTo")
+}
+
+/// One wire from a pin to a pin. Optionally a core of a library cable.
+model Wire {
+  id           String         @id @default(uuid())
+  connectionId String
+  fromNodeId   String
+  fromPin      Int
+  toNodeId     String
+  toPin        Int
+  cableId      String?
+  coreIndex    Int?
+  color        String         @default("")
+  /// Length of this wire in mm; null means "same as the connection length".
+  lengthMm     Float?
+  note         String         @default("")
+  connection   Connection     @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  fromNode     ConnectionNode @relation("WireFrom", fields: [fromNodeId], references: [id], onDelete: Cascade)
+  toNode       ConnectionNode @relation("WireTo", fields: [toNodeId], references: [id], onDelete: Cascade)
+  cable        Cable?         @relation(fields: [cableId], references: [id], onDelete: SetNull)
+}
+
+/// Semi-transparent zone rectangle on the project map (e.g. "Frame", "Toolhead").
+model Zone {
+  id        String  @id @default(uuid())
+  projectId String
+  name      String  @default("Zone")
+  color     String  @default("#3b82f6")
+  x         Float
+  y         Float
+  w         Float
+  h         Float
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}

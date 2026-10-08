@@ -1,0 +1,30 @@
+node_modules/
+dist/
+.env
+server/uploads/
+server/public/
+
+# Secrets
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
+
+# Data dumps and backups
+*.sql
+*.dump
+*.backup
+*.tar
+*.tar.gz
+*.zip
+
+# Logs and OS/editor clutter
+*.log
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

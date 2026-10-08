@@ -1,0 +1,924 @@
+:root {
+  --bg: #f4f6f9;
+  --surface: #ffffff;
+  --text: #0f172a;
+  --muted: #64748b;
+  --border: #e2e8f0;
+  --primary: #2563eb;
+  --primary-hover: #1d4ed8;
+  --danger: #dc2626;
+  --ok: #16a34a;
+  --radius: 8px;
+  --shadow: 0 1px 2px rgba(15, 23, 42, 0.06), 0 1px 3px rgba(15, 23, 42, 0.08);
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  color: var(--text);
+  font-size: 15px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+}
+
+a {
+  color: var(--primary);
+  text-decoration: none;
+}
+
+h1 {
+  font-size: 1.5rem;
+  margin: 0;
+}
+h2 {
+  font-size: 1.15rem;
+  margin: 0;
+}
+h3 {
+  font-size: 1rem;
+  margin: 0 0 8px;
+}
+
+/* ---------- Layout ---------- */
+.topbar {
+  height: 48px;
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  background: #0f172a;
+}
+.brand {
+  color: #fff;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.brand-mark {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  background: linear-gradient(135deg, #3b82f6, #22c55e);
+}
+.main {
+  min-height: calc(100vh - 48px);
+}
+.topnav {
+  margin-left: auto;
+  display: flex;
+  gap: 16px;
+}
+.topnav a {
+  color: #cbd5e1;
+  font-size: 0.9rem;
+}
+.topnav a:hover {
+  color: #fff;
+}
+.page.narrow {
+  max-width: 760px;
+}
+.progress {
+  height: 8px;
+  background: #e2e8f0;
+  border-radius: 999px;
+  overflow: hidden;
+}
+.progress-bar {
+  height: 100%;
+  background: var(--primary);
+  transition: width 0.2s;
+}
+.restore-result {
+  margin-top: 14px;
+  padding: 12px 14px;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 6px;
+}
+.page {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px 16px 40px;
+}
+.page-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+.section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 12px 0;
+  flex-wrap: wrap;
+}
+.crumbs {
+  color: var(--muted);
+  font-size: 0.9rem;
+  margin-bottom: 4px;
+}
+.muted {
+  color: var(--muted);
+}
+.small {
+  font-size: 0.85rem;
+}
+.right {
+  text-align: right;
+}
+.nowrap {
+  white-space: nowrap;
+}
+.error {
+  color: var(--danger);
+}
+.empty {
+  padding: 32px;
+  text-align: center;
+  color: var(--muted);
+  background: var(--surface);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+}
+.hint {
+  margin: 4px 0 8px;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.row-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 3px 0;
+}
+
+/* ---------- Buttons ---------- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 7px 14px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  border-radius: 6px;
+  cursor: pointer;
+  font: inherit;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+.btn:hover {
+  background: #f1f5f9;
+}
+.btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.btn-primary {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+}
+.btn-primary:hover {
+  background: var(--primary-hover);
+}
+.btn-danger {
+  color: var(--danger);
+}
+.btn-danger:hover {
+  background: #fef2f2;
+}
+.btn-sm {
+  padding: 4px 10px;
+  font-size: 0.85rem;
+}
+.btn-icon {
+  border: none;
+  background: none;
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--muted);
+  padding: 0 4px;
+}
+.btn-link {
+  border: none;
+  background: none;
+  color: var(--primary);
+  cursor: pointer;
+  padding: 0;
+  font: inherit;
+  text-align: left;
+}
+.btn-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.seg {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--surface);
+}
+.seg button {
+  border: none;
+  background: none;
+  padding: 5px 12px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.9rem;
+}
+.seg button + button {
+  border-left: 1px solid var(--border);
+}
+.seg button.active {
+  background: var(--primary);
+  color: #fff;
+}
+
+/* ---------- Tabs ---------- */
+.tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+}
+.tab {
+  border: none;
+  background: none;
+  padding: 10px 16px;
+  font: inherit;
+  cursor: pointer;
+  color: var(--muted);
+  border-bottom: 2px solid transparent;
+  white-space: nowrap;
+}
+.tab.active {
+  color: var(--primary);
+  border-bottom-color: var(--primary);
+  font-weight: 600;
+}
+
+/* ---------- Cards ---------- */
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 14px;
+}
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.card-main {
+  color: inherit;
+  padding: 14px;
+  flex: 1;
+}
+.card-main h3 {
+  margin: 6px 0 4px;
+}
+.card-main p {
+  margin: 4px 0;
+}
+.card-thumb {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  border-radius: 6px;
+  background: #e2e8f0;
+}
+.card-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  border-top: 1px solid var(--border);
+}
+
+/* ---------- Tables ---------- */
+.table-wrap {
+  overflow-x: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.table th,
+.table td {
+  padding: 8px 10px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+.table th {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--muted);
+  background: #f8fafc;
+}
+.table.clickable tbody tr {
+  cursor: pointer;
+}
+.table.clickable tbody tr:hover {
+  background: #f8fafc;
+}
+.row-selected {
+  background: #fff7ed !important;
+}
+.thumb-cell img,
+.thumb-empty {
+  width: 48px;
+  height: 36px;
+  object-fit: cover;
+  border-radius: 4px;
+  display: block;
+  background: #e2e8f0;
+}
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  background: #e0e7ff;
+  color: #3730a3;
+}
+.badge-harness {
+  background: #fef3c7;
+  color: #92400e;
+}
+.add-row td {
+  background: #f8fafc;
+}
+
+/* ---------- Swatches & colors ---------- */
+.swatch {
+  display: inline-block;
+  border-radius: 3px;
+  border: 1px solid rgba(15, 23, 42, 0.35);
+  vertical-align: middle;
+  flex: none;
+}
+.swatch-empty {
+  background: repeating-linear-gradient(45deg, #fff 0 3px, #e2e8f0 3px 6px);
+}
+.swatches {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex-wrap: wrap;
+}
+.color-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.color-picker select {
+  max-width: 120px;
+}
+
+/* ---------- Forms ---------- */
+input,
+select,
+textarea {
+  font: inherit;
+  padding: 6px 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #fff;
+  color: var(--text);
+  min-width: 0;
+}
+input[type='color'] {
+  padding: 2px;
+  height: 34px;
+  width: 60px;
+}
+input:focus,
+select:focus,
+textarea:focus {
+  outline: 2px solid #bfdbfe;
+  border-color: var(--primary);
+}
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+.form label.check {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+.form-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 12px;
+}
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.form-preview {
+  max-width: 100%;
+  max-height: 200px;
+  object-fit: contain;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  align-self: flex-start;
+}
+.input-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.input-row select {
+  flex: 1;
+}
+.cores {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+.cores legend {
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+.core-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.core-num {
+  width: 24px;
+  text-align: right;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+/* ---------- Modal ---------- */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 5vh 12px;
+  z-index: 1000;
+  overflow-y: auto;
+}
+.modal {
+  background: var(--surface);
+  border-radius: 10px;
+  width: 100%;
+  max-width: 520px;
+  box-shadow: 0 20px 50px rgba(15, 23, 42, 0.3);
+}
+.modal-wide {
+  max-width: 760px;
+}
+.modal-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+}
+.modal-body {
+  padding: 18px;
+}
+.pick-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+}
+.pick-item {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  text-align: left;
+  border: 1px solid var(--border);
+  background: #fff;
+  border-radius: 8px;
+  padding: 8px;
+  cursor: pointer;
+  font: inherit;
+}
+.pick-item:hover {
+  border-color: var(--primary);
+}
+.pick-item img {
+  width: 64px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: 4px;
+}
+.pick-item span {
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---------- Panels ---------- */
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+  margin-bottom: 12px;
+}
+.panel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.panel-head h3 {
+  margin: 0;
+}
+.panel-foot {
+  margin-top: 12px;
+}
+.pin-table {
+  margin-top: 12px;
+  font-size: 0.85rem;
+}
+.pin-table td,
+.pin-table th {
+  padding: 4px 6px;
+}
+.pin-table input {
+  width: 100%;
+  min-width: 70px;
+}
+.conn-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.conn-list li {
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border);
+}
+.info-img {
+  max-width: 100%;
+  max-height: 140px;
+  border-radius: 6px;
+}
+.save-ind {
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+.save-ind.saved {
+  color: var(--ok);
+}
+.save-ind.saving {
+  color: var(--muted);
+}
+.save-ind.error {
+  color: var(--danger);
+}
+
+/* ---------- PCB page ---------- */
+.pcb-page {
+  padding: 12px 16px 24px;
+}
+.pcb-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.pcb-layout {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+}
+.pcb-stage-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  background: #1e293b;
+  border-radius: var(--radius);
+  overflow: hidden;
+  touch-action: none;
+  user-select: none;
+}
+.stage-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #cbd5e1;
+}
+.pcb-side {
+  width: 360px;
+  flex: none;
+  max-height: calc(100vh - 140px);
+  overflow-y: auto;
+}
+.rect-menu {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  border-radius: 6px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+  overflow: hidden;
+  z-index: 5;
+}
+.rect-menu button {
+  border: none;
+  background: none;
+  padding: 8px 16px;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.9rem;
+}
+.rect-menu button:hover {
+  background: #f1f5f9;
+}
+.rect-menu button.danger {
+  color: var(--danger);
+}
+
+/* ---------- Connection editor / diagram / map ---------- */
+.editor-page {
+  padding: 12px 16px 24px;
+}
+.editor-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.title-input {
+  font-size: 1.2rem;
+  font-weight: 600;
+  flex: 1;
+  min-width: 160px;
+  max-width: 480px;
+}
+.diagram-title {
+  font-size: 1.25rem;
+}
+.editor-layout {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+}
+.flow-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  height: 62vh;
+  min-height: 380px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.map-wrap {
+  height: calc(100vh - 170px);
+}
+.editor-side {
+  width: 340px;
+  flex: none;
+  max-height: 62vh;
+  overflow-y: auto;
+}
+.flow-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 24px;
+  color: var(--muted);
+  pointer-events: none;
+}
+.wire-table {
+  margin-top: 14px;
+}
+.wire-table .table-wrap {
+  border: none;
+}
+.search-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.search-box input {
+  flex: 1;
+}
+.length-input {
+  width: 90px;
+}
+.avail-group {
+  margin-bottom: 10px;
+}
+.avail-pcb {
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  margin-bottom: 2px;
+}
+
+/* Connector node */
+.cn {
+  background: #fff;
+  border: 2px solid #334155;
+  border-radius: 8px;
+  min-width: 200px;
+  font-size: 12px;
+  box-shadow: var(--shadow);
+}
+.cn-selected {
+  border-color: #f97316;
+}
+.cn-free {
+  border-style: dashed;
+}
+.cn-head {
+  background: #334155;
+  color: #fff;
+  padding: 6px 10px;
+  display: flex;
+  flex-direction: column;
+}
+.cn-selected .cn-head {
+  background: #f97316;
+}
+.cn-head small {
+  opacity: 0.8;
+}
+.cn-empty {
+  padding: 8px 12px;
+  color: var(--muted);
+}
+.cn-pin {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 14px;
+  border-top: 1px solid #e2e8f0;
+  min-height: 24px;
+}
+.pin-num {
+  font-weight: 700;
+  width: 22px;
+  color: #475569;
+}
+.pin-name {
+  flex: 1;
+}
+.react-flow__handle.pin-handle {
+  width: 12px;
+  height: 12px;
+  background: #fff;
+  border: 2px solid #334155;
+}
+.react-flow__handle.pin-handle:hover {
+  background: #f97316;
+}
+
+/* Map */
+.map-pcb {
+  background: #fff;
+  border: 2px solid #334155;
+  border-radius: 10px;
+  padding: 8px;
+  width: 200px;
+  text-align: center;
+  box-shadow: var(--shadow);
+  cursor: pointer;
+}
+.map-pcb-selected {
+  border-color: #f97316;
+}
+.map-pcb img {
+  width: 100%;
+  height: 110px;
+  object-fit: cover;
+  border-radius: 6px;
+  background: #e2e8f0;
+  pointer-events: none;
+}
+.map-pcb-name {
+  font-weight: 700;
+  margin-top: 6px;
+}
+.react-flow__handle.map-handle {
+  opacity: 0;
+  width: 6px;
+  height: 6px;
+  pointer-events: none;
+}
+.map-zone {
+  width: 100%;
+  height: 100%;
+  border: 2px dashed;
+  border-radius: 12px;
+}
+.map-zone-label {
+  display: inline-block;
+  padding: 6px 10px;
+  font-weight: 700;
+  font-size: 14px;
+}
+.react-flow__node.zone-locked {
+  pointer-events: none !important;
+}
+.edge-picker {
+  position: absolute;
+  z-index: 10;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 200px;
+}
+
+/* ---------- Mobile ---------- */
+@media (max-width: 900px) {
+  .pcb-layout,
+  .editor-layout {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .pcb-side,
+  .editor-side {
+    width: 100%;
+    max-height: none;
+  }
+  .flow-wrap {
+    height: 55vh;
+  }
+  .map-wrap {
+    height: 65vh;
+  }
+}
+
+/* ---------- Print (wiring diagram) ---------- */
+@media print {
+  .no-print,
+  .react-flow__controls,
+  .react-flow__minimap {
+    display: none !important;
+  }
+  body {
+    background: #fff;
+  }
+  .flow-wrap {
+    border: none;
+    height: 60vh;
+  }
+  .panel {
+    border: none;
+    padding: 0;
+  }
+}
