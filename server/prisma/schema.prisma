@@ -16,8 +16,21 @@ model Project {
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
   pcbs        ProjectPcb[]
+  folders     ComponentFolder[]
   connections Connection[]
   zones       Zone[]
+}
+
+/// Folder on a project's Components tab, grouping placed components by machine part (e.g. "Toolhead").
+model ComponentFolder {
+  id        String       @id @default(uuid())
+  projectId String
+  name      String
+  createdAt DateTime     @default(now())
+  project   Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  pcbs      ProjectPcb[]
+
+  @@index([projectId])
 }
 
 /// Library PCB (shared between projects). Image is stored on the uploads volume.
@@ -46,8 +59,11 @@ model ProjectPcb {
   name      String           @default("")
   mapX      Float            @default(0)
   mapY      Float            @default(0)
+  /// Folder on the Components tab; null = not in a folder. Deleting a folder keeps its components.
+  folderId  String?
   project   Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
   pcb       Pcb              @relation(fields: [pcbId], references: [id], onDelete: Cascade)
+  folder    ComponentFolder? @relation(fields: [folderId], references: [id], onDelete: SetNull)
   nodes     ConnectionNode[]
 
   @@index([projectId])

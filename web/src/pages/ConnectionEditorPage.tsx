@@ -601,6 +601,7 @@ function Editor({
 
       {pickingComponents && (
         <ComponentsModal
+          projectId={projectId}
           placements={placements}
           initial={placementIds}
           onClose={() => setPickingComponents(false)}
@@ -626,11 +627,13 @@ function Editor({
 }
 
 function ComponentsModal({
+  projectId,
   placements,
   initial,
   onClose,
   onApply,
 }: {
+  projectId: string;
   placements: Placement[];
   initial: string[];
   onClose: () => void;
@@ -640,7 +643,7 @@ function ComponentsModal({
   return (
     <Modal title="Components in this connection" onClose={onClose} wide>
       <div className="form">
-        <PlacementPicker placements={placements} selected={ids} onChange={setIds} />
+        <PlacementPicker projectId={projectId} placements={placements} selected={ids} onChange={setIds} />
         <div className="form-actions">
           <button className="btn" onClick={onClose}>
             Cancel

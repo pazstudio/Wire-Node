@@ -168,7 +168,7 @@ function NewConnectionModal({
           <span className="field-label">Components in this connection</span>
           <span className="small muted">Only connectors of these components are listed in the editor. You can change this later.</span>
           {placementsQ.data ? (
-            <PlacementPicker placements={placementsQ.data} selected={placementIds} onChange={setPlacementIds} />
+            <PlacementPicker projectId={projectId} placements={placementsQ.data} selected={placementIds} onChange={setPlacementIds} />
           ) : (
             <Loading error={placementsQ.error} />
           )}

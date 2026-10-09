@@ -18,7 +18,8 @@ import { UPLOAD_DIR } from '../storage.js';
 const FORMAT = 'wire-node-backup';
 // v2: projectPcbs have their own id and name; connectionNodes record projectPcbId.
 // v1 backups still restore: placements get new ids and nodes are linked to them.
-const VERSION = 2;
+// v3: componentFolders, and projectPcbs record folderId.
+const VERSION = 3;
 const MAX_RESTORE_BYTES = 20 * 1024 ** 3; // 20 GB
 
 const TABLES = [
@@ -26,6 +27,7 @@ const TABLES = [
   'cables',
   'connectorTypes',
   'pcbs',
+  'componentFolders',
   'projectPcbs',
   'pcbConnectors',
   'connections',
@@ -56,13 +58,14 @@ class HttpError extends Error {
 
 async function readAll(): Promise<Rows> {
   // One repeatable-read transaction, so the snapshot is consistent.
-  const [projects, cables, connectorTypes, pcbs, projectPcbs, pcbConnectors, connections, connectionNodes, wires, zones] =
+  const [projects, cables, connectorTypes, pcbs, componentFolders, projectPcbs, pcbConnectors, connections, connectionNodes, wires, zones] =
     await prisma.$transaction(
       [
         prisma.project.findMany(),
         prisma.cable.findMany(),
         prisma.connectorType.findMany(),
         prisma.pcb.findMany(),
+        prisma.componentFolder.findMany(),
         prisma.projectPcb.findMany(),
         prisma.pcbConnector.findMany(),
         prisma.connection.findMany(),
@@ -72,7 +75,19 @@ async function readAll(): Promise<Rows> {
       ],
       { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
     );
-  return { projects, cables, connectorTypes, pcbs, projectPcbs, pcbConnectors, connections, connectionNodes, wires, zones } as Rows;
+  return {
+    projects,
+    cables,
+    connectorTypes,
+    pcbs,
+    componentFolders,
+    projectPcbs,
+    pcbConnectors,
+    connections,
+    connectionNodes,
+    wires,
+    zones,
+  } as Rows;
 }
 
 function counts(rows: Rows) {
@@ -215,6 +230,7 @@ export default async function backupRoutes(app: FastifyInstance) {
           await tx.connection.deleteMany();
           await tx.zone.deleteMany();
           await tx.projectPcb.deleteMany();
+          await tx.componentFolder.deleteMany();
           await tx.pcbConnector.deleteMany();
           await tx.pcb.deleteMany();
           await tx.connectorType.deleteMany();
@@ -228,6 +244,7 @@ export default async function backupRoutes(app: FastifyInstance) {
           await create('cables', (data) => tx.cable.createMany({ data }));
           await create('connectorTypes', (data) => tx.connectorType.createMany({ data }));
           await create('pcbs', (data) => tx.pcb.createMany({ data }));
+          await create('componentFolders', (data) => tx.componentFolder.createMany({ data }));
           await create('projectPcbs', (data) => tx.projectPcb.createMany({ data }));
           await create('pcbConnectors', (data) => tx.pcbConnector.createMany({ data }));
           await create('connections', (data) => tx.connection.createMany({ data }));

@@ -31,7 +31,16 @@ export interface Placement {
   name: string;
   mapX: number;
   mapY: number;
+  /** Folder on the Components tab; null = not in a folder. */
+  folderId: string | null;
   pcb: Pcb;
+}
+
+/** Folder on a project's Components tab (e.g. "Toolhead", "Frame"). */
+export interface ComponentFolder {
+  id: string;
+  projectId: string;
+  name: string;
 }
 
 export interface ConnectorType {

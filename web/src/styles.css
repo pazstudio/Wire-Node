@@ -1001,13 +1001,24 @@ textarea:focus {
 .placement-picker .search-box {
   margin: 4px 0 8px;
 }
+.placement-groups {
+  max-height: 46vh;
+  overflow-y: auto;
+  padding: 2px;
+}
+.placement-group-name {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--muted);
+  margin: 8px 0 4px;
+}
+.placement-groups > div:first-child .placement-group-name {
+  margin-top: 0;
+}
 .placement-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   gap: 8px;
-  max-height: 46vh;
-  overflow-y: auto;
-  padding: 2px;
 }
 .placement-tile {
   display: flex;
@@ -1151,4 +1162,75 @@ textarea:focus {
   border-top: 1px solid var(--border);
   margin-top: 2px;
   padding-top: 5px;
+}
+
+/* Folders on the Components tab */
+.folder {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: #f8fafc;
+  padding: 8px 12px 12px;
+  margin-bottom: 14px;
+  transition: border-color 0.1s, background 0.1s;
+}
+.folder-loose {
+  background: none;
+  border-style: dashed;
+}
+.folder-drop {
+  border: 2px dashed var(--primary);
+  background: #eff6ff;
+  padding: 7px 11px 11px;
+}
+.folder-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+}
+.folder-head + .card-grid {
+  margin-top: 8px;
+}
+.folder-toggle {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: none;
+  background: none;
+  padding: 4px 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.folder-name {
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.folder-loose .folder-head {
+  gap: 10px;
+}
+.folder-empty {
+  margin: 6px 0 0;
+  padding: 18px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.85rem;
+  border: 1px dashed #cbd5e1;
+  border-radius: 6px;
+}
+.card[draggable='true'] {
+  cursor: grab;
+}
+.card-dragging {
+  opacity: 0.4;
+}
+.folder-select {
+  font-size: 0.8rem;
+  padding: 3px 6px;
+  margin-left: auto;
 }
