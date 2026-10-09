@@ -1,12 +1,21 @@
-import { useState, type DragEvent, type FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { api, errorMessage, imgUrl, type ComponentFolder, type Pcb, type Placement } from '../../api';
+import { api, errorMessage, imgUrl, type Folder, type Pcb, type Placement } from '../../api';
+import {
+  FolderModal,
+  FolderSection,
+  FolderSelect,
+  LooseSection,
+  deleteFolder,
+  foldersKey,
+  itemsIn,
+  useCollapsed,
+  useFolderDnd,
+  useFolders,
+} from '../../components/folders';
 import { PcbForm, sameName } from '../../components/forms';
 import { ErrorText, Loading, Modal } from '../../components/ui';
-
-const DRAG_TYPE = 'application/x-wire-node-placement';
-const NO_FOLDER = 'none';
 
 export default function PcbsTab({ projectId }: { projectId: string }) {
   const qc = useQueryClient();
@@ -18,14 +27,13 @@ export default function PcbsTab({ projectId }: { projectId: string }) {
   const [editing, setEditing] = useState<Placement | 'new' | null>(null);
   // null = closed, true = open with nothing chosen, Pcb = open with that component chosen.
   const [picking, setPicking] = useState<Pcb | true | null>(null);
-  const foldersQ = useQuery({
-    queryKey: ['folders', projectId],
-    queryFn: () => api.get<ComponentFolder[]>(`/api/projects/${projectId}/folders`),
+  const foldersQ = useFolders(projectId, 'components');
+  const [folderForm, setFolderForm] = useState<Folder | 'new' | null>(null);
+  const collapsed = useCollapsed();
+  const dnd = useFolderDnd('components', (id, folderId) => {
+    const p = q.data?.find((x) => x.id === id);
+    if (p) moveTo(p, folderId);
   });
-  const [folderForm, setFolderForm] = useState<ComponentFolder | 'new' | null>(null);
-  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
-  const [dragging, setDragging] = useState<string | null>(null); // placement id
-  const [dropTarget, setDropTarget] = useState<string | null>(null); // folder id or NO_FOLDER
 
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ['projectPcbs', projectId] });
@@ -78,75 +86,19 @@ export default function PcbsTab({ projectId }: { projectId: string }) {
     qc.invalidateQueries({ queryKey: ['projectPcbs', projectId] });
   }
 
-  async function removeFolder(f: ComponentFolder, count: number) {
-    const msg = count
-      ? `Delete folder "${f.name}"? Its ${count} component(s) stay in the project, outside any folder.`
-      : `Delete folder "${f.name}"?`;
-    if (!confirm(msg)) return;
-    try {
-      await api.del(`/api/component-folders/${f.id}`);
-    } catch (e) {
-      alert(errorMessage(e));
-    }
-    qc.invalidateQueries({ queryKey: ['folders', projectId] });
+  async function removeFolder(f: Folder, count: number) {
+    if (!(await deleteFolder(f, count))) return;
+    qc.invalidateQueries({ queryKey: foldersKey(projectId, 'components') });
     qc.invalidateQueries({ queryKey: ['projectPcbs', projectId] });
-  }
-
-  function toggleFolder(id: string) {
-    setCollapsed((c) => {
-      const next = new Set(c);
-      if (!next.delete(id)) next.add(id);
-      return next;
-    });
   }
 
   if (!q.data || !foldersQ.data) return <Loading error={q.error || foldersQ.error} />;
   const placements = q.data;
   const folders = foldersQ.data;
-  const folderIds = new Set(folders.map((f) => f.id));
-  const inFolder = (folderId: string | null) =>
-    placements.filter((p) => (p.folderId && folderIds.has(p.folderId) ? p.folderId : null) === folderId);
-  const loose = inFolder(null);
-
-  /** Lets a folder (or "not in a folder", null) take a dragged component card. */
-  function dropZone(folderId: string | null) {
-    const key = folderId ?? NO_FOLDER;
-    return {
-      onDragOver: (e: DragEvent) => {
-        if (!e.dataTransfer.types.includes(DRAG_TYPE)) return;
-        e.preventDefault();
-        e.dataTransfer.dropEffect = 'move';
-        setDropTarget(key);
-      },
-      onDragLeave: (e: DragEvent) => {
-        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDropTarget((t) => (t === key ? null : t));
-      },
-      onDrop: (e: DragEvent) => {
-        e.preventDefault();
-        setDropTarget(null);
-        // The card re-mounts in its new folder, so its own dragend never arrives.
-        setDragging(null);
-        const p = placements.find((x) => x.id === e.dataTransfer.getData(DRAG_TYPE));
-        if (p) moveTo(p, folderId);
-      },
-    };
-  }
+  const loose = itemsIn(placements, folders, null);
 
   const card = (p: Placement) => (
-    <div
-      key={p.id}
-      className={`card ${dragging === p.id ? 'card-dragging' : ''}`}
-      draggable
-      onDragStart={(e) => {
-        e.dataTransfer.setData(DRAG_TYPE, p.id);
-        e.dataTransfer.effectAllowed = 'move';
-        setDragging(p.id);
-      }}
-      onDragEnd={() => {
-        setDragging(null);
-        setDropTarget(null);
-      }}
-    >
+    <div key={p.id} className={`card ${dnd.dragging === p.id ? 'card-dragging' : ''}`} {...dnd.itemProps(p.id)}>
       <Link to={`/projects/${projectId}/pcbs/${p.pcbId}`} className="card-main" draggable={false}>
         <img src={imgUrl(p.pcb.thumbPath)} alt="" className="card-thumb" loading="lazy" draggable={false} />
         <h3>{p.name}</h3>
@@ -168,20 +120,7 @@ export default function PcbsTab({ projectId }: { projectId: string }) {
           Delete
         </button>
         {folders.length > 0 && (
-          <select
-            className="folder-select"
-            value={p.folderId && folderIds.has(p.folderId) ? p.folderId : ''}
-            onChange={(e) => moveTo(p, e.target.value || null)}
-            aria-label={`Folder of ${p.name}`}
-            title="Move to folder"
-          >
-            <option value="">No folder</option>
-            {folders.map((f) => (
-              <option key={f.id} value={f.id}>
-                📁 {f.name}
-              </option>
-            ))}
-          </select>
+          <FolderSelect folders={folders} value={p.folderId} onChange={(f) => moveTo(p, f)} label={`Folder of ${p.name}`} />
         )}
       </div>
     </div>
@@ -210,48 +149,28 @@ export default function PcbsTab({ projectId }: { projectId: string }) {
       {placements.length === 0 && <p className="empty">No components in this project yet. Upload a picture of a PCB, motor or power supply to start.</p>}
 
       {folders.map((f) => {
-        const items = inFolder(f.id);
-        const open = !collapsed.has(f.id);
+        const items = itemsIn(placements, folders, f.id);
         return (
-          <div key={f.id} className={`folder ${dropTarget === f.id ? 'folder-drop' : ''}`} {...dropZone(f.id)}>
-            <div className="folder-head">
-              <button className="folder-toggle" onClick={() => toggleFolder(f.id)} aria-expanded={open}>
-                <span className="comp-chevron">{open ? '▾' : '▸'}</span>
-                <span className="folder-icon" aria-hidden>
-                  📁
-                </span>
-                <span className="folder-name">{f.name}</span>
-                <span className="small muted">{items.length}</span>
-              </button>
-              <button className="btn btn-sm" onClick={() => setFolderForm(f)}>
-                Rename
-              </button>
-              <button className="btn btn-sm btn-danger" onClick={() => removeFolder(f, items.length)}>
-                Delete
-              </button>
-            </div>
-            {open &&
-              (items.length ? (
-                <div className="card-grid">{items.map(card)}</div>
-              ) : (
-                <p className="folder-empty">Empty. Drag components here, or choose this folder on a component card.</p>
-              ))}
-          </div>
+          <FolderSection
+            key={f.id}
+            folder={f}
+            count={items.length}
+            open={collapsed.isOpen(f.id)}
+            dropping={dnd.isOver(f.id)}
+            zone={dnd.zoneProps(f.id)}
+            onToggle={() => collapsed.toggle(f.id)}
+            onRename={() => setFolderForm(f)}
+            onDelete={() => removeFolder(f, items.length)}
+            emptyText="Empty. Drag components here, or choose this folder on a component card."
+          >
+            <div className="card-grid">{items.map(card)}</div>
+          </FolderSection>
         );
       })}
-
       {folders.length > 0 && (
-        <div className={`folder folder-loose ${dropTarget === NO_FOLDER ? 'folder-drop' : ''}`} {...dropZone(null)}>
-          <div className="folder-head">
-            <span className="folder-name muted">Not in a folder</span>
-            <span className="small muted">{loose.length}</span>
-          </div>
-          {loose.length ? (
-            <div className="card-grid">{loose.map(card)}</div>
-          ) : (
-            <p className="folder-empty">Drop here to take a component out of its folder.</p>
-          )}
-        </div>
+        <LooseSection count={loose.length} dropping={dnd.isOver(null)} zone={dnd.zoneProps(null)}>
+          <div className="card-grid">{loose.map(card)}</div>
+        </LooseSection>
       )}
       {folders.length === 0 && <div className="card-grid">{placements.map(card)}</div>}
 
@@ -278,11 +197,12 @@ export default function PcbsTab({ projectId }: { projectId: string }) {
       {folderForm && (
         <FolderModal
           projectId={projectId}
+          kind="components"
           folder={folderForm === 'new' ? null : folderForm}
           onClose={() => setFolderForm(null)}
           onSaved={() => {
             setFolderForm(null);
-            qc.invalidateQueries({ queryKey: ['folders', projectId] });
+            qc.invalidateQueries({ queryKey: foldersKey(projectId, 'components') });
           }}
         />
       )}
@@ -296,61 +216,6 @@ export default function PcbsTab({ projectId }: { projectId: string }) {
         />
       )}
     </section>
-  );
-}
-
-function FolderModal({
-  projectId,
-  folder,
-  onClose,
-  onSaved,
-}: {
-  projectId: string;
-  folder: ComponentFolder | null;
-  onClose: () => void;
-  onSaved: () => void;
-}) {
-  const [name, setName] = useState(folder?.name ?? '');
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  async function submit(e: FormEvent) {
-    e.preventDefault();
-    setBusy(true);
-    try {
-      if (folder) await api.patch(`/api/component-folders/${folder.id}`, { name });
-      else await api.post(`/api/projects/${projectId}/folders`, { name });
-      onSaved();
-    } catch (err) {
-      setError(errorMessage(err));
-      setBusy(false);
-    }
-  }
-
-  return (
-    <Modal title={folder ? 'Rename folder' : 'New folder'} onClose={onClose}>
-      <form className="form" onSubmit={submit}>
-        <label>
-          Name
-          <input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            required
-            autoFocus
-            placeholder="e.g. Toolhead, Frame, Electronics box"
-          />
-        </label>
-        <ErrorText error={error} />
-        <div className="form-actions">
-          <button type="button" className="btn" onClick={onClose}>
-            Cancel
-          </button>
-          <button className="btn btn-primary" disabled={busy}>
-            {folder ? 'Rename' : 'Create folder'}
-          </button>
-        </div>
-      </form>
-    </Modal>
   );
 }
 

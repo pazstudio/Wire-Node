@@ -16,21 +16,26 @@ model Project {
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
   pcbs        ProjectPcb[]
-  folders     ComponentFolder[]
+  folders     Folder[]
   connections Connection[]
   zones       Zone[]
 }
 
-/// Folder on a project's Components tab, grouping placed components by machine part (e.g. "Toolhead").
-model ComponentFolder {
-  id        String       @id @default(uuid())
-  projectId String
-  name      String
-  createdAt DateTime     @default(now())
-  project   Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  pcbs      ProjectPcb[]
+/// Folder on a project tab: groups placed components (e.g. "Toolhead") or connections.
+/// Stored in the "ComponentFolder" table, its name from when only components had folders.
+model Folder {
+  id          String       @id @default(uuid())
+  projectId   String
+  /// "components" or "connections": the tab the folder is on.
+  kind        String       @default("components")
+  name        String
+  createdAt   DateTime     @default(now())
+  project     Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  pcbs        ProjectPcb[]
+  connections Connection[]
 
   @@index([projectId])
+  @@map("ComponentFolder")
 }
 
 /// Library PCB (shared between projects). Image is stored on the uploads volume.
@@ -63,7 +68,7 @@ model ProjectPcb {
   folderId  String?
   project   Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
   pcb       Pcb              @relation(fields: [pcbId], references: [id], onDelete: Cascade)
-  folder    ComponentFolder? @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  folder    Folder?          @relation(fields: [folderId], references: [id], onDelete: SetNull)
   nodes     ConnectionNode[]
 
   @@index([projectId])
@@ -132,9 +137,12 @@ model Connection {
   /// Components (ProjectPcb ids) chosen for this connection; the editor lists only their connectors.
   /// Placements that already have connectors in the diagram count as chosen even if missing here.
   placementIds String[]        @default([])
+  /// Folder on the Connections tab; null = not in a folder.
+  folderId    String?
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
   project     Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  folder      Folder?          @relation(fields: [folderId], references: [id], onDelete: SetNull)
   nodes       ConnectionNode[]
   wires       Wire[]
 }

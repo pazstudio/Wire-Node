@@ -36,10 +36,13 @@ export interface Placement {
   pcb: Pcb;
 }
 
-/** Folder on a project's Components tab (e.g. "Toolhead", "Frame"). */
-export interface ComponentFolder {
+export type FolderKind = 'components' | 'connections';
+
+/** Folder on a project tab (e.g. "Toolhead", "Frame"), for components or for connections. */
+export interface Folder {
   id: string;
   projectId: string;
+  kind: FolderKind;
   name: string;
 }
 
@@ -164,6 +167,8 @@ export interface ConnectionSummary {
   description: string;
   kind: string;
   lengthMm: number | null;
+  /** Folder on the Connections tab; null = not in a folder. */
+  folderId: string | null;
   wireCount: number;
   endpoints: string[];
 }

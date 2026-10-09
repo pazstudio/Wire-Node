@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { prisma } from '../db.js';
+import { folderInProject } from './projects.js';
 
 /** Board fields the diagram needs to show a picture of where a connector is. */
 export const pcbPreviewSelect = {
@@ -31,6 +32,7 @@ const CreateBody = z.object({
   description: z.string().default(''),
   lengthMm: LengthMm,
   placementIds: PlacementIds.default([]),
+  folderId: z.string().nullable().default(null),
 });
 
 const NodeSchema = z.object({
@@ -129,6 +131,7 @@ export default async function connectionRoutes(app: FastifyInstance) {
       description: c.description,
       kind: c.kind,
       lengthMm: c.lengthMm,
+      folderId: c.folderId,
       wireCount: c._count.wires,
       endpoints: c.nodes.map((n) =>
         n.pcbConnector
@@ -140,6 +143,9 @@ export default async function connectionRoutes(app: FastifyInstance) {
 
   app.post<P>('/api/projects/:id/connections', async (req, reply) => {
     const data = CreateBody.parse(req.body);
+    if (data.folderId && !(await folderInProject(data.folderId, req.params.id, 'connections'))) {
+      return reply.code(400).send({ message: 'That folder is not in this project' });
+    }
     const placementIds = await projectPlacementIds(req.params.id, data.placementIds);
     const conn = await prisma.connection.create({ data: { ...data, placementIds, projectId: req.params.id } });
     return reply.code(201).send(conn);
@@ -194,6 +200,17 @@ export default async function connectionRoutes(app: FastifyInstance) {
       }),
     ]);
     return getConnection(id);
+  });
+
+  // Moves a connection into a folder (null = out of any folder) without touching the diagram.
+  app.patch<P>('/api/connections/:id', async (req, reply) => {
+    const { folderId } = z.object({ folderId: z.string().nullable() }).parse(req.body);
+    const conn = await prisma.connection.findUniqueOrThrow({ where: { id: req.params.id } });
+    if (folderId && !(await folderInProject(folderId, conn.projectId, 'connections'))) {
+      return reply.code(400).send({ message: 'That folder is not in this project' });
+    }
+    await prisma.connection.update({ where: { id: conn.id }, data: { folderId } });
+    return { ok: true };
   });
 
   app.delete<P>('/api/connections/:id', async (req) => {

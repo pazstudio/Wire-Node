@@ -10,6 +10,12 @@ const ProjectBody = z.object({
 });
 
 const FolderBody = z.object({ name: z.string().trim().min(1, 'Name is required').max(200) });
+export const FolderKind = z.enum(['components', 'connections']);
+
+/** True if the folder is in the project and holds this kind of item. */
+export async function folderInProject(folderId: string, projectId: string, kind: z.infer<typeof FolderKind>) {
+  return !!(await prisma.folder.findFirst({ where: { id: folderId, projectId, kind } }));
+}
 
 type P = { Params: { id: string } };
 
@@ -103,9 +109,8 @@ export default async function projectRoutes(app: FastifyInstance) {
       .partial()
       .parse(req.body);
     const existing = await prisma.projectPcb.findUniqueOrThrow({ where: { id: req.params.id }, include: { pcb: true } });
-    if (data.folderId) {
-      const folder = await prisma.componentFolder.findFirst({ where: { id: data.folderId, projectId: existing.projectId } });
-      if (!folder) return reply.code(400).send({ message: 'That folder is not in this project' });
+    if (data.folderId && !(await folderInProject(data.folderId, existing.projectId, 'components'))) {
+      return reply.code(400).send({ message: 'That folder is not in this project' });
     }
     if (data.name !== undefined) {
       await assertPlacementNameFree(existing.projectId, data.name || existing.pcb.name, existing.id);
@@ -121,24 +126,26 @@ export default async function projectRoutes(app: FastifyInstance) {
   });
 
   // ----- Folders on the Components tab -----
-  app.get<P>('/api/projects/:id/folders', async (req) => {
-    const folders = await prisma.componentFolder.findMany({ where: { projectId: req.params.id } });
+  // ?kind=components (the default) or ?kind=connections
+  app.get<P & { Querystring: { kind?: string } }>('/api/projects/:id/folders', async (req) => {
+    const kind = FolderKind.parse(req.query.kind ?? 'components');
+    const folders = await prisma.folder.findMany({ where: { projectId: req.params.id, kind } });
     return folders.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
   });
 
   app.post<P>('/api/projects/:id/folders', async (req, reply) => {
-    const { name } = FolderBody.parse(req.body);
+    const { name, kind } = FolderBody.extend({ kind: FolderKind.default('components') }).parse(req.body);
     await prisma.project.findUniqueOrThrow({ where: { id: req.params.id } });
-    return reply.code(201).send(await prisma.componentFolder.create({ data: { name, projectId: req.params.id } }));
+    return reply.code(201).send(await prisma.folder.create({ data: { name, kind, projectId: req.params.id } }));
   });
 
-  app.patch<P>('/api/component-folders/:id', async (req) =>
-    prisma.componentFolder.update({ where: { id: req.params.id }, data: FolderBody.parse(req.body) }),
+  app.patch<P>('/api/folders/:id', async (req) =>
+    prisma.folder.update({ where: { id: req.params.id }, data: FolderBody.parse(req.body) }),
   );
 
-  // Components in the folder stay in the project, outside any folder.
-  app.delete<P>('/api/component-folders/:id', async (req) => {
-    await prisma.componentFolder.deleteMany({ where: { id: req.params.id } });
+  // What was in the folder stays in the project, outside any folder.
+  app.delete<P>('/api/folders/:id', async (req) => {
+    await prisma.folder.deleteMany({ where: { id: req.params.id } });
     return { ok: true };
   });
 

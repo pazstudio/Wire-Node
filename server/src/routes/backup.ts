@@ -19,7 +19,8 @@ const FORMAT = 'wire-node-backup';
 // v2: projectPcbs have their own id and name; connectionNodes record projectPcbId.
 // v1 backups still restore: placements get new ids and nodes are linked to them.
 // v3: componentFolders, and projectPcbs record folderId.
-const VERSION = 3;
+// v4: componentFolders is now folders (with a kind); connections record folderId.
+const VERSION = 4;
 const MAX_RESTORE_BYTES = 20 * 1024 ** 3; // 20 GB
 
 const TABLES = [
@@ -27,7 +28,7 @@ const TABLES = [
   'cables',
   'connectorTypes',
   'pcbs',
-  'componentFolders',
+  'folders',
   'projectPcbs',
   'pcbConnectors',
   'connections',
@@ -58,14 +59,14 @@ class HttpError extends Error {
 
 async function readAll(): Promise<Rows> {
   // One repeatable-read transaction, so the snapshot is consistent.
-  const [projects, cables, connectorTypes, pcbs, componentFolders, projectPcbs, pcbConnectors, connections, connectionNodes, wires, zones] =
+  const [projects, cables, connectorTypes, pcbs, folders, projectPcbs, pcbConnectors, connections, connectionNodes, wires, zones] =
     await prisma.$transaction(
       [
         prisma.project.findMany(),
         prisma.cable.findMany(),
         prisma.connectorType.findMany(),
         prisma.pcb.findMany(),
-        prisma.componentFolder.findMany(),
+        prisma.folder.findMany(),
         prisma.projectPcb.findMany(),
         prisma.pcbConnector.findMany(),
         prisma.connection.findMany(),
@@ -80,7 +81,7 @@ async function readAll(): Promise<Rows> {
     cables,
     connectorTypes,
     pcbs,
-    componentFolders,
+    folders,
     projectPcbs,
     pcbConnectors,
     connections,
@@ -204,6 +205,9 @@ export default async function backupRoutes(app: FastifyInstance) {
         throw new HttpError(400, `This backup was made by a newer Wire-Node (format v${backup.version}). Update this server first.`);
       }
       const rows = backup.data as Rows;
+      // v3 backups name the folders table componentFolders (they only had component folders).
+      const legacyFolders = (parsed as { data?: { componentFolders?: unknown } }).data?.componentFolders;
+      if (!rows.folders.length && Array.isArray(legacyFolders)) rows.folders = legacyFolders;
 
       // 3. Refuse to silently overwrite existing data.
       if (!replace) {
@@ -230,7 +234,7 @@ export default async function backupRoutes(app: FastifyInstance) {
           await tx.connection.deleteMany();
           await tx.zone.deleteMany();
           await tx.projectPcb.deleteMany();
-          await tx.componentFolder.deleteMany();
+          await tx.folder.deleteMany();
           await tx.pcbConnector.deleteMany();
           await tx.pcb.deleteMany();
           await tx.connectorType.deleteMany();
@@ -244,7 +248,7 @@ export default async function backupRoutes(app: FastifyInstance) {
           await create('cables', (data) => tx.cable.createMany({ data }));
           await create('connectorTypes', (data) => tx.connectorType.createMany({ data }));
           await create('pcbs', (data) => tx.pcb.createMany({ data }));
-          await create('componentFolders', (data) => tx.componentFolder.createMany({ data }));
+          await create('folders', (data) => tx.folder.createMany({ data }));
           await create('projectPcbs', (data) => tx.projectPcb.createMany({ data }));
           await create('pcbConnectors', (data) => tx.pcbConnector.createMany({ data }));
           await create('connections', (data) => tx.connection.createMany({ data }));

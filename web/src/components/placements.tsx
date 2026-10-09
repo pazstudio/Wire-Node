@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { api, imgUrl, type ComponentFolder, type Placement } from '../api';
+import { imgUrl, type Placement } from '../api';
+import { useFolders } from './folders';
 
 /** Checkable grid of the components placed in a project (chooses which ones a connection uses). */
 export function PlacementPicker({
@@ -15,10 +15,7 @@ export function PlacementPicker({
   onChange: (ids: string[]) => void;
 }) {
   const [search, setSearch] = useState('');
-  const foldersQ = useQuery({
-    queryKey: ['folders', projectId],
-    queryFn: () => api.get<ComponentFolder[]>(`/api/projects/${projectId}/folders`),
-  });
+  const foldersQ = useFolders(projectId, 'components');
   const terms = search.toLowerCase().split(/\s+/).filter(Boolean);
   const shown = placements.filter((p) => {
     const hay = `${p.name} ${p.pcb.name}`.toLowerCase();
