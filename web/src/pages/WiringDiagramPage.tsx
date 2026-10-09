@@ -23,7 +23,10 @@ export default function WiringDiagramPage() {
 }
 
 function Diagram({ projectId, conn }: { projectId: string; conn: Connection }) {
-  const [nodes, , onNodesChange] = useNodesState<ConnFlowNode>(nodesFromDtos(conn.nodes));
+  // Read-only nodes get pointer-events: none from React Flow; keep them hoverable for the picture preview.
+  const [nodes, , onNodesChange] = useNodesState<ConnFlowNode>(
+    nodesFromDtos(conn.nodes).map((n) => ({ ...n, style: { pointerEvents: 'all' } })),
+  );
   const edges = useMemo(() => buildEdges(nodes, conn.wires), [nodes, conn.wires]);
   const nodeById = new Map(nodes.map((n) => [n.id, n]));
 

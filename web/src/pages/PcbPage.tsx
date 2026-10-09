@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Konva from 'konva';
@@ -15,6 +15,7 @@ import {
   type PcbConnector,
   type PcbDetail,
 } from '../api';
+import { AutocompleteInput, usePinNameSuggestions } from '../components/autocomplete';
 import { ConnectorTypeForm } from '../components/forms';
 import { ColorPicker, Loading, SaveIndicator, Swatch } from '../components/ui';
 import { colorLabel } from '../colors';
@@ -218,6 +219,8 @@ function PcbEditor({ pcb, projectId, types }: { pcb: PcbDetail; projectId: strin
   const [creatingTypeFor, setCreatingTypeFor] = useState<string | null>(null);
 
   const saver = useConnectorAutosave((id) => rectsRef.current.find((r) => r.id === id));
+  const pageNames = useMemo(() => rects.flatMap((r) => r.pins.map((p) => p.name)), [rects]);
+  const pinNames = usePinNameSuggestions(pageNames);
 
   // ----- Sizing: fit the photo into the available area -----
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -619,6 +622,7 @@ function PcbEditor({ pcb, projectId, types }: { pcb: PcbDetail; projectId: strin
               <ConnectorPanel
                 rect={panelRect}
                 types={types}
+                pinNames={pinNames}
                 onChange={(patch) => updateRect(panelRect.id, patch)}
                 onClose={() => setPanelId(null)}
                 onNewType={() => setCreatingTypeFor(panelRect.id)}
@@ -674,6 +678,7 @@ function PcbEditor({ pcb, projectId, types }: { pcb: PcbDetail; projectId: strin
 function ConnectorPanel({
   rect,
   types,
+  pinNames,
   onChange,
   onClose,
   onNewType,
@@ -682,6 +687,7 @@ function ConnectorPanel({
 }: {
   rect: PcbConnector;
   types: ConnectorType[];
+  pinNames: string[];
   onChange: (patch: Partial<PcbConnector>) => void;
   onClose: () => void;
   onNewType: () => void;
@@ -773,7 +779,13 @@ function ConnectorPanel({
               <tr key={p.n}>
                 <td>{p.n}</td>
                 <td>
-                  <input value={p.name} onChange={(e) => setPin(p.n, { name: e.target.value })} placeholder="e.g. GND" />
+                  <AutocompleteInput
+                    value={p.name}
+                    onChange={(v) => setPin(p.n, { name: v })}
+                    options={pinNames}
+                    placeholder="e.g. GND"
+                    aria-label={`Pin ${p.n} name`}
+                  />
                 </td>
                 <td>
                   <ColorPicker value={p.color} onChange={(v) => setPin(p.n, { color: v })} />

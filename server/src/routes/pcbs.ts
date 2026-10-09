@@ -150,6 +150,17 @@ export default async function pcbRoutes(app: FastifyInstance) {
     return { ok: true };
   });
 
+  // Every pin name used on any connector, most used first (autocomplete in the pin editor).
+  app.get('/api/pin-names', async () =>
+    prisma.$queryRaw<{ name: string; count: number }[]>`
+      SELECT btrim(p->>'name') AS name, count(*)::int AS count
+      FROM "PcbConnector" c, jsonb_array_elements(CASE WHEN jsonb_typeof(c.pins) = 'array' THEN c.pins ELSE '[]'::jsonb END) p
+      WHERE btrim(coalesce(p->>'name', '')) <> ''
+      GROUP BY 1
+      ORDER BY 2 DESC, 1
+      LIMIT 5000`,
+  );
+
   app.get<P>('/api/pcb-connectors/:id/usage', async (req) => {
     const connections = await prisma.connection.findMany({
       where: { nodes: { some: { pcbConnectorId: req.params.id } } },

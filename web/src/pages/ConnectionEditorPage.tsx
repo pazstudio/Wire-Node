@@ -16,11 +16,13 @@ import {
 import {
   api,
   errorMessage,
+  imgUrl,
   uuid,
   type Cable,
   type Connection,
   type ConnectorType,
-  type PcbConnector,
+  type Placement,
+  type ProjectConnector,
   type WireModel,
   parseLength,
 } from '../api';
@@ -34,11 +36,9 @@ import {
   pinLabel,
   type ConnFlowNode,
 } from '../components/flow';
-import { ColorPicker, Loading, SaveIndicator, Swatch } from '../components/ui';
+import { PlacementPicker } from '../components/placements';
+import { ColorPicker, Loading, Modal, SaveIndicator, Swatch } from '../components/ui';
 import { colorLabel } from '../colors';
-
-/** A connector on one placement of a component (a component placed twice lists its connectors twice). */
-type AvailableConnector = PcbConnector & { pcb: { id: string; name: string }; placement: { id: string; name: string } };
 
 const availableKey = (placementId: string | null, connectorId: string | null) => `${placementId}:${connectorId}`;
 
@@ -52,14 +52,18 @@ export default function ConnectionEditorPage() {
   });
   const availQ = useQuery({
     queryKey: ['projectConnectors', pid],
-    queryFn: () => api.get<AvailableConnector[]>(`/api/projects/${pid}/connectors`),
+    queryFn: () => api.get<ProjectConnector[]>(`/api/projects/${pid}/connectors`),
     staleTime: 0,
+  });
+  const placementsQ = useQuery({
+    queryKey: ['projectPcbs', pid],
+    queryFn: () => api.get<Placement[]>(`/api/projects/${pid}/pcbs`),
   });
   const typesQ = useQuery({ queryKey: ['connectorTypes'], queryFn: () => api.get<ConnectorType[]>('/api/connector-types') });
   const cablesQ = useQuery({ queryKey: ['cables'], queryFn: () => api.get<Cable[]>('/api/cables') });
 
-  if (!connQ.data || !availQ.data || !typesQ.data || !cablesQ.data)
-    return <Loading error={connQ.error || availQ.error || typesQ.error || cablesQ.error} />;
+  if (!connQ.data || !availQ.data || !placementsQ.data || !typesQ.data || !cablesQ.data)
+    return <Loading error={connQ.error || availQ.error || placementsQ.error || typesQ.error || cablesQ.error} />;
 
   return (
     <ReactFlowProvider>
@@ -68,6 +72,7 @@ export default function ConnectionEditorPage() {
         projectId={pid}
         conn={connQ.data}
         available={availQ.data}
+        placements={placementsQ.data}
         types={typesQ.data}
         cables={cablesQ.data}
       />
@@ -79,12 +84,14 @@ function Editor({
   projectId,
   conn,
   available,
+  placements,
   types,
   cables,
 }: {
   projectId: string;
   conn: Connection;
-  available: AvailableConnector[];
+  available: ProjectConnector[];
+  placements: Placement[];
   types: ConnectorType[];
   cables: Cable[];
 }) {
@@ -111,6 +118,12 @@ function Editor({
   const [description, setDescription] = useState(conn.description);
   const [lengthInput, setLengthInput] = useState(conn.lengthMm != null ? String(conn.lengthMm) : '');
   const connectionLength = parseLength(lengthInput);
+  // Components this connection uses; placements that already have connectors in the diagram always count.
+  const [placementIds, setPlacementIds] = useState<string[]>(() => [
+    ...new Set([...conn.placementIds, ...conn.nodes.flatMap((n) => (n.projectPcbId ? [n.projectPcbId] : []))]),
+  ]);
+  const [pickingComponents, setPickingComponents] = useState(false);
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const [search, setSearch] = useState('');
   const [selectedWireId, setSelectedWireId] = useState<string | null>(null);
   const [defaultCableId, setDefaultCableId] = useState('');
@@ -123,8 +136,8 @@ function Editor({
   nodesRef.current = nodes;
   const wiresRef = useRef(wires);
   wiresRef.current = wires;
-  const stateRef = useRef({ name, description, lengthMm: connectionLength });
-  stateRef.current = { name, description, lengthMm: connectionLength };
+  const stateRef = useRef({ name, description, lengthMm: connectionLength, placementIds });
+  stateRef.current = { name, description, lengthMm: connectionLength, placementIds };
 
   const edges = useMemo(() => buildEdges(nodes, wires, selectedWireId), [nodes, wires, selectedWireId]);
   const nodeById = useMemo(() => new Map(nodes.map((n) => [n.id, n])), [nodes]);
@@ -141,6 +154,7 @@ function Editor({
           name: s.name.trim() || 'Untitled connection',
           description: s.description,
           lengthMm: s.lengthMm,
+          placementIds: s.placementIds,
           nodes: nodesRef.current.map((n) => ({
             id: n.id,
             pcbConnectorId: n.data.pcbConnectorId,
@@ -273,7 +287,7 @@ function Editor({
     return { x: p.x - 110 + offset, y: p.y + offset };
   }
 
-  function addPcbConnector(c: AvailableConnector) {
+  function addPcbConnector(c: ProjectConnector) {
     const node: ConnFlowNode = { id: uuid(), type: 'connector', position: dropPosition(), data: nodeDataFromPcbConnector(c, c.placement) };
     setNodes((ns) => [...ns, node]);
     markDirty();
@@ -297,12 +311,42 @@ function Editor({
     markDirty();
   }
 
+  const placementById = new Map(placements.map((p) => [p.id, p]));
+
+  /** Sets the chosen components; connectors of removed components leave the diagram (after confirming). */
+  function changeComponents(ids: string[]) {
+    const keep = new Set(ids);
+    const dropped = nodesRef.current.filter((n) => n.data.projectPcbId && !keep.has(n.data.projectPcbId));
+    if (dropped.length) {
+      const names = [...new Set(dropped.map((n) => placementById.get(n.data.projectPcbId!)?.name ?? '?'))];
+      const msg = `${dropped.length} connector(s) of ${names.join(', ')} are in this diagram.\nRemoving the component also removes them and their wires. Continue?`;
+      if (!confirm(msg)) return false;
+      const gone = new Set(dropped.map((n) => n.id));
+      setNodes((ns) => ns.filter((n) => !gone.has(n.id)));
+      setWires((ws) => ws.filter((w) => !gone.has(w.fromNodeId) && !gone.has(w.toNodeId)));
+    }
+    setPlacementIds(ids);
+    markDirty();
+    return true;
+  }
+
+  function toggleCollapsed(id: string) {
+    setCollapsed((c) => {
+      const next = new Set(c);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
+  }
+
   const used = new Set(
     nodes.filter((n) => n.data.pcbConnectorId).map((n) => availableKey(n.data.projectPcbId, n.data.pcbConnectorId)),
   );
+  const chosen = new Set(placementIds);
+  const included = placements.filter((p) => chosen.has(p.id));
+  const includedConnectors = available.filter((c) => chosen.has(c.placement.id));
   // Search: every word must match the component, designator, name on board or connector type.
   const terms = search.toLowerCase().split(/\s+/).filter(Boolean);
-  const matches = (c: AvailableConnector) => {
+  const matches = (c: ProjectConnector) => {
     if (!terms.length) return true;
     const hay = [c.placement.name, c.pcb.name, c.label, c.name, c.connectorType?.name, c.connectorType?.crimpName]
       .filter(Boolean)
@@ -310,12 +354,14 @@ function Editor({
       .toLowerCase();
     return terms.every((t) => hay.includes(t));
   };
-  const filtered = available.filter(matches);
-  const byPlacement = new Map<string, { name: string; items: AvailableConnector[] }>();
-  for (const c of filtered) {
-    if (!byPlacement.has(c.placement.id)) byPlacement.set(c.placement.id, { name: c.placement.name, items: [] });
-    byPlacement.get(c.placement.id)!.items.push(c);
+  const byPlacement = new Map<string, { all: ProjectConnector[]; shown: ProjectConnector[] }>();
+  for (const c of includedConnectors) {
+    if (!byPlacement.has(c.placement.id)) byPlacement.set(c.placement.id, { all: [], shown: [] });
+    const g = byPlacement.get(c.placement.id)!;
+    g.all.push(c);
+    if (matches(c)) g.shown.push(c);
   }
+  const shownCount = [...byPlacement.values()].reduce((n, g) => n + g.shown.length, 0);
   const selectedWire = wires.find((w) => w.id === selectedWireId) ?? null;
   const selectedNodes = nodes.filter((n) => n.selected);
 
@@ -442,56 +488,101 @@ function Editor({
                 </div>
               )}
               <div className="panel">
-                <h3>Connectors on project components</h3>
-                {available.length > 0 && (
+                <div className="panel-head">
+                  <h3>Components</h3>
+                  <button className="btn btn-sm" onClick={() => setPickingComponents(true)}>
+                    {included.length ? 'Add / remove' : 'Choose components'}
+                  </button>
+                </div>
+                {included.length === 0 && (
+                  <p className="small muted">
+                    Choose the components this connection links. Their connectors are listed here to add to the diagram.
+                  </p>
+                )}
+                {includedConnectors.length > 8 && (
                   <div className="search-box">
                     <input
                       type="search"
                       value={search}
                       onChange={(e) => setSearch(e.target.value)}
-                      placeholder="Search component, J3, Power, JST…"
+                      placeholder="Search J3, Power, JST…"
                       aria-label="Search connectors"
                     />
                     {search && (
                       <span className="small muted">
-                        {filtered.length} of {available.length}
+                        {shownCount} of {includedConnectors.length}
                       </span>
                     )}
                   </div>
                 )}
-                {available.length === 0 && (
-                  <p className="small muted">
-                    No connectors drawn yet. Open a component on the Components tab, switch to Edit and draw rectangles on connectors.
-                  </p>
-                )}
-                {available.length > 0 && filtered.length === 0 && <p className="small muted">No connectors match “{search}”.</p>}
-                {[...byPlacement.entries()].map(([placementId, group]) => (
-                  <div key={placementId} className="avail-group">
-                    <div className="avail-pcb">{group.name}</div>
-                    {group.items.map((c) => (
-                      <div key={availableKey(placementId, c.id)} className="row-between">
-                        <span>
-                          <strong>{c.label || '?'}</strong>
-                          {c.name && <> {c.name}</>}
-                          {c.connectorType && <span className="muted small"> · {c.connectorType.name}</span>}
-                        </span>
+                {terms.length > 0 && shownCount === 0 && <p className="small muted">No connectors match “{search}”.</p>}
+                {included.map((pl) => {
+                  const group = byPlacement.get(pl.id) ?? { all: [], shown: [] };
+                  if (terms.length && !group.shown.length) return null;
+                  const open = terms.length > 0 || !collapsed.has(pl.id);
+                  const added = group.all.filter((c) => used.has(availableKey(pl.id, c.id))).length;
+                  return (
+                    <div key={pl.id} className="comp-group">
+                      <div className="comp-head">
+                        <button className="comp-toggle" onClick={() => toggleCollapsed(pl.id)} aria-expanded={open}>
+                          <span className="comp-chevron">{open ? '▾' : '▸'}</span>
+                          <img src={imgUrl(pl.pcb.thumbPath)} alt="" />
+                          <span className="comp-name">{pl.name}</span>
+                          <span className="small muted nowrap" title="Connectors in the diagram / on the component">
+                            {added}/{group.all.length}
+                          </span>
+                        </button>
                         <button
-                          className="btn btn-sm"
-                          disabled={used.has(availableKey(placementId, c.id))}
-                          onClick={() => addPcbConnector(c)}
+                          className="btn-icon"
+                          title="Remove component from this connection"
+                          aria-label={`Remove ${pl.name}`}
+                          onClick={() => changeComponents(placementIds.filter((id) => id !== pl.id))}
                         >
-                          {used.has(availableKey(placementId, c.id)) ? 'Added' : '+ Add'}
+                          ×
                         </button>
                       </div>
-                    ))}
-                  </div>
-                ))}
+                      {open && group.all.length === 0 && (
+                        <p className="small muted comp-empty">
+                          No connectors drawn yet.{' '}
+                          <Link to={`/projects/${projectId}/pcbs/${pl.pcbId}?edit=1`}>Draw them on the photo</Link>
+                        </p>
+                      )}
+                      {open &&
+                        group.shown.map((c) => {
+                          const isUsed = used.has(availableKey(pl.id, c.id));
+                          return (
+                            <div key={c.id} className="row-between comp-item">
+                              <span>
+                                <strong>{c.label || '?'}</strong>
+                                {c.name && <> {c.name}</>}
+                                {c.connectorType && <span className="muted small"> · {c.connectorType.name}</span>}
+                              </span>
+                              <button className="btn btn-sm" disabled={isUsed} onClick={() => addPcbConnector(c)}>
+                                {isUsed ? 'Added' : '+ Add'}
+                              </button>
+                            </div>
+                          );
+                        })}
+                    </div>
+                  );
+                })}
               </div>
               <FreeConnectorForm types={types} onAdd={addFreeConnector} />
             </>
           )}
         </aside>
       </div>
+
+      {pickingComponents && (
+        <ComponentsModal
+          placements={placements}
+          initial={placementIds}
+          onClose={() => setPickingComponents(false)}
+          onApply={(ids) => {
+            if (changeComponents(ids)) setPickingComponents(false);
+          }}
+        />
+      )}
 
       <WireTable
         nodes={nodes}
@@ -505,6 +596,35 @@ function Editor({
         onRemove={removeWire}
       />
     </div>
+  );
+}
+
+function ComponentsModal({
+  placements,
+  initial,
+  onClose,
+  onApply,
+}: {
+  placements: Placement[];
+  initial: string[];
+  onClose: () => void;
+  onApply: (ids: string[]) => void;
+}) {
+  const [ids, setIds] = useState(initial);
+  return (
+    <Modal title="Components in this connection" onClose={onClose} wide>
+      <div className="form">
+        <PlacementPicker placements={placements} selected={ids} onChange={setIds} />
+        <div className="form-actions">
+          <button className="btn" onClick={onClose}>
+            Cancel
+          </button>
+          <button className="btn btn-primary" onClick={() => onApply(ids)}>
+            Done
+          </button>
+        </div>
+      </div>
+    </Modal>
   );
 }
 

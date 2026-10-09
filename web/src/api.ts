@@ -51,6 +51,15 @@ export interface Pin {
   color: string;
 }
 
+/** Board fields used to show where a connector sits on the component photo. */
+export interface PcbPreview {
+  id: string;
+  name: string;
+  thumbPath: string;
+  imageWidth: number;
+  imageHeight: number;
+}
+
 export interface PcbConnector {
   id: string;
   pcbId: string;
@@ -66,7 +75,15 @@ export interface PcbConnector {
   rotation: number;
   pins: Pin[];
   connectorType?: ConnectorType | null;
-  pcb?: { id: string; name: string };
+  pcb?: PcbPreview;
+}
+
+/** A connector on one placement of a component (a component placed twice lists its connectors twice). */
+export type ProjectConnector = PcbConnector & { pcb: PcbPreview; placement: { id: string; name: string } };
+
+export interface PinNameStat {
+  name: string;
+  count: number;
 }
 
 export interface PcbDetail extends Pcb {
@@ -95,7 +112,7 @@ export interface ConnectionNodeDto {
   pinCount: number;
   x: number;
   y: number;
-  pcbConnector?: (PcbConnector & { pcb: { id: string; name: string } }) | null;
+  pcbConnector?: (PcbConnector & { pcb: PcbPreview }) | null;
   /** name is empty when the placement uses the component name. */
   projectPcb?: { id: string; name: string } | null;
   connectorType?: ConnectorType | null;
@@ -126,6 +143,8 @@ export interface Connection {
   description: string;
   kind: string;
   lengthMm: number | null;
+  /** Components chosen for this connection (placement ids). */
+  placementIds: string[];
   nodes: ConnectionNodeDto[];
   wires: WireDto[];
 }

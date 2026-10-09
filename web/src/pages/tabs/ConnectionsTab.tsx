@@ -1,7 +1,8 @@
 import { useState, type FormEvent } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { api, errorMessage, formatLength, parseLength, type ConnectionSummary } from '../../api';
+import { api, errorMessage, formatLength, parseLength, type ConnectionSummary, type Placement } from '../../api';
+import { PlacementPicker } from '../../components/placements';
 import { ErrorText, Loading, Modal } from '../../components/ui';
 
 export default function ConnectionsTab({ projectId }: { projectId: string }) {
@@ -115,6 +116,11 @@ function NewConnectionModal({
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [length, setLength] = useState('');
+  const [placementIds, setPlacementIds] = useState<string[]>([]);
+  const placementsQ = useQuery({
+    queryKey: ['projectPcbs', projectId],
+    queryFn: () => api.get<Placement[]>(`/api/projects/${projectId}/pcbs`),
+  });
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -126,6 +132,7 @@ function NewConnectionModal({
         name,
         description,
         lengthMm: parseLength(length),
+        placementIds,
       });
       onCreated(c.id);
     } catch (err) {
@@ -135,7 +142,7 @@ function NewConnectionModal({
   }
 
   return (
-    <Modal title="New connection" onClose={onClose}>
+    <Modal title="New connection" onClose={onClose} wide>
       <form className="form" onSubmit={submit}>
         <label>
           Name
@@ -157,6 +164,15 @@ function NewConnectionModal({
             placeholder="e.g. 450"
           />
         </label>
+        <div className="field">
+          <span className="field-label">Components in this connection</span>
+          <span className="small muted">Only connectors of these components are listed in the editor. You can change this later.</span>
+          {placementsQ.data ? (
+            <PlacementPicker placements={placementsQ.data} selected={placementIds} onChange={setPlacementIds} />
+          ) : (
+            <Loading error={placementsQ.error} />
+          )}
+        </div>
         <ErrorText error={error} />
         <div className="form-actions">
           <button type="button" className="btn" onClick={onClose}>

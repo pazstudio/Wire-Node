@@ -16,6 +16,8 @@ id_ed25519*
 
 # Data dumps and backups
 *.sql
+# Schema upgrades run at startup; needed in every build.
+!server/prisma/upgrade.sql
 *.dump
 *.backup
 *.tar

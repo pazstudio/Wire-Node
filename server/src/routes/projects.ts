@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { prisma } from '../db.js';
+import { pcbPreviewSelect } from './connections.js';
 
 const ProjectBody = z.object({
   name: z.string().trim().min(1, 'Name is required'),
@@ -130,8 +131,7 @@ export default async function projectRoutes(app: FastifyInstance) {
       include: {
         pcb: {
           select: {
-            id: true,
-            name: true,
+            ...pcbPreviewSelect,
             connectors: { include: { connectorType: true }, orderBy: { label: 'asc' } },
           },
         },
@@ -140,12 +140,9 @@ export default async function projectRoutes(app: FastifyInstance) {
     return placements
       .map((pl) => ({ pl, name: placementName(pl) }))
       .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }))
-      .flatMap(({ pl, name }) =>
-        pl.pcb.connectors.map((c) => ({
-          ...c,
-          pcb: { id: pl.pcb.id, name: pl.pcb.name },
-          placement: { id: pl.id, name },
-        })),
-      );
+      .flatMap(({ pl, name }) => {
+        const { connectors, ...pcb } = pl.pcb;
+        return connectors.map((c) => ({ ...c, pcb, placement: { id: pl.id, name } }));
+      });
   });
 }

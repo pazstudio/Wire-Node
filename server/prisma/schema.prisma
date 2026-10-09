@@ -113,6 +113,9 @@ model Connection {
   kind        String           @default("direct")
   /// Cable length of the whole connection in mm. Wires can override it (harness branches).
   lengthMm    Float?
+  /// Components (ProjectPcb ids) chosen for this connection; the editor lists only their connectors.
+  /// Placements that already have connectors in the diagram count as chosen even if missing here.
+  placementIds String[]        @default([])
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
   project     Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)

@@ -2,10 +2,19 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { prisma } from '../db.js';
 
+/** Board fields the diagram needs to show a picture of where a connector is. */
+export const pcbPreviewSelect = {
+  id: true,
+  name: true,
+  thumbPath: true,
+  imageWidth: true,
+  imageHeight: true,
+} as const;
+
 const fullInclude = {
   nodes: {
     include: {
-      pcbConnector: { include: { pcb: { select: { id: true, name: true } }, connectorType: true } },
+      pcbConnector: { include: { pcb: { select: pcbPreviewSelect }, connectorType: true } },
       projectPcb: { select: { id: true, name: true } },
       connectorType: true,
     },
@@ -15,10 +24,13 @@ const fullInclude = {
 
 const LengthMm = z.number().nonnegative().max(1e7).nullable().optional();
 
+const PlacementIds = z.array(z.string().uuid()).max(1000);
+
 const CreateBody = z.object({
   name: z.string().trim().min(1, 'Name is required'),
   description: z.string().default(''),
   lengthMm: LengthMm,
+  placementIds: PlacementIds.default([]),
 });
 
 const NodeSchema = z.object({
@@ -50,6 +62,8 @@ const SaveBody = z.object({
   name: z.string().trim().min(1, 'Name is required'),
   description: z.string().default(''),
   lengthMm: LengthMm,
+  /** Omitted = keep the components chosen before. */
+  placementIds: PlacementIds.optional(),
   nodes: z.array(NodeSchema),
   wires: z.array(WireSchema),
 });
@@ -78,6 +92,20 @@ async function checkPlacements(projectId: string, nodes: z.infer<typeof NodeSche
     if (pcbId !== connectorPcb.get(n.pcbConnectorId!)) return 'A connector does not belong to the component it was placed on';
   }
   return null;
+}
+
+/** Keeps only placements that are (still) in the project, without duplicates. */
+async function projectPlacementIds(projectId: string, ids: string[]) {
+  if (!ids.length) return [];
+  const rows = await prisma.projectPcb.findMany({ where: { projectId, id: { in: ids } }, select: { id: true } });
+  const existing = new Set(rows.map((r) => r.id));
+  return [...new Set(ids)].filter((id) => existing.has(id));
+}
+
+async function getConnection(id: string) {
+  const conn = await prisma.connection.findUniqueOrThrow({ where: { id }, include: fullInclude });
+  // Placements removed from the project since they were chosen are dropped here.
+  return { ...conn, placementIds: await projectPlacementIds(conn.projectId, conn.placementIds) };
 }
 
 export default async function connectionRoutes(app: FastifyInstance) {
@@ -112,13 +140,12 @@ export default async function connectionRoutes(app: FastifyInstance) {
 
   app.post<P>('/api/projects/:id/connections', async (req, reply) => {
     const data = CreateBody.parse(req.body);
-    const conn = await prisma.connection.create({ data: { ...data, projectId: req.params.id } });
+    const placementIds = await projectPlacementIds(req.params.id, data.placementIds);
+    const conn = await prisma.connection.create({ data: { ...data, placementIds, projectId: req.params.id } });
     return reply.code(201).send(conn);
   });
 
-  app.get<P>('/api/connections/:id', async (req) =>
-    prisma.connection.findUniqueOrThrow({ where: { id: req.params.id }, include: fullInclude }),
-  );
+  app.get<P>('/api/connections/:id', async (req) => getConnection(req.params.id));
 
   // Saves the whole diagram (nodes + wires) as one document.
   app.put<P>('/api/connections/:id', async (req, reply) => {
@@ -133,6 +160,7 @@ export default async function connectionRoutes(app: FastifyInstance) {
     const conn = await prisma.connection.findUniqueOrThrow({ where: { id } });
     const problem = await checkPlacements(conn.projectId, b.nodes);
     if (problem) return reply.code(400).send({ message: problem });
+    const placementIds = b.placementIds ? await projectPlacementIds(conn.projectId, b.placementIds) : undefined;
     await prisma.$transaction([
       prisma.connection.update({
         where: { id },
@@ -141,6 +169,7 @@ export default async function connectionRoutes(app: FastifyInstance) {
           description: b.description,
           lengthMm: b.lengthMm ?? null,
           kind: b.nodes.length > 2 ? 'harness' : 'direct',
+          ...(placementIds ? { placementIds } : {}),
         },
       }),
       prisma.wire.deleteMany({ where: { connectionId: id } }),
@@ -164,7 +193,7 @@ export default async function connectionRoutes(app: FastifyInstance) {
         })),
       }),
     ]);
-    return prisma.connection.findUniqueOrThrow({ where: { id }, include: fullInclude });
+    return getConnection(id);
   });
 
   app.delete<P>('/api/connections/:id', async (req) => {

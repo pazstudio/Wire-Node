@@ -1,4 +1,5 @@
-import { memo } from 'react';
+import { memo, useEffect, useRef, useState, type MouseEvent } from 'react';
+import { createPortal } from 'react-dom';
 import {
   BaseEdge,
   Handle,
@@ -10,7 +11,16 @@ import {
   type NodeProps,
 } from '@xyflow/react';
 import { colorParts } from '../colors';
-import { connectorDisplayName, resizePins, type ConnectionNodeDto, type ConnectorType, type PcbConnector, type Pin, type WireModel } from '../api';
+import {
+  connectorDisplayName,
+  imgUrl,
+  resizePins,
+  type ConnectionNodeDto,
+  type ConnectorType,
+  type PcbConnector,
+  type Pin,
+  type WireModel,
+} from '../api';
 import { Swatch } from './ui';
 
 export type ConnNodeData = {
@@ -23,16 +33,98 @@ export type ConnNodeData = {
   connectorTypeId: string | null;
   label: string;
   pinCount: number;
+  preview: NodePreview | null;
 };
 export type ConnFlowNode = Node<ConnNodeData, 'connector'>;
 
 export type WireEdgeData = { color: string };
 export type WireFlowEdge = Edge<WireEdgeData, 'wire'>;
 
+/** Picture shown when hovering a connector node: the component photo with the connector highlighted. */
+export type NodePreview = {
+  image: string;
+  /** Natural picture size; 0 when unknown. */
+  width: number;
+  height: number;
+  /** Where the connector is on the picture (0..1), or null to show the picture only. */
+  rect: { x: number; y: number; w: number; h: number } | null;
+  caption: string;
+};
+
+const PREVIEW_DELAY_MS = 350;
+const PREVIEW_MAX_W = 320;
+const PREVIEW_MAX_H = 240;
+
+/** Opens the preview after the pointer rests on the node; closes on leave, press, scroll or zoom. */
+function useHoverPreview(enabled: boolean) {
+  const [anchor, setAnchor] = useState<DOMRect | null>(null);
+  const timer = useRef<number>();
+  const close = () => {
+    window.clearTimeout(timer.current);
+    setAnchor(null);
+  };
+  useEffect(() => () => window.clearTimeout(timer.current), []);
+  useEffect(() => {
+    if (!anchor) return;
+    const onWheel = () => setAnchor(null);
+    window.addEventListener('wheel', onWheel, { capture: true, passive: true });
+    return () => window.removeEventListener('wheel', onWheel, { capture: true });
+  }, [anchor]);
+  if (!enabled) return { anchor: null, handlers: {} };
+  return {
+    anchor,
+    handlers: {
+      onMouseEnter: (e: MouseEvent<HTMLDivElement>) => {
+        if (e.buttons) return; // dragging a wire or the canvas across this node
+        const el = e.currentTarget;
+        window.clearTimeout(timer.current);
+        timer.current = window.setTimeout(() => setAnchor(el.getBoundingClientRect()), PREVIEW_DELAY_MS);
+      },
+      onMouseLeave: close,
+      onMouseDown: close,
+    },
+  };
+}
+
+function PreviewPopup({ preview, anchor }: { preview: NodePreview; anchor: DOMRect }) {
+  const known = preview.width > 0 && preview.height > 0;
+  const scale = known ? Math.min(PREVIEW_MAX_W / preview.width, PREVIEW_MAX_H / preview.height) : 1;
+  const boxW = known ? Math.round(preview.width * scale) : PREVIEW_MAX_W;
+  const boxH = known ? Math.round(preview.height * scale) : PREVIEW_MAX_H;
+  const popW = boxW + 16;
+  const popH = boxH + 48;
+  let left = anchor.right + 12;
+  if (left + popW > window.innerWidth - 8) left = anchor.left - 12 - popW;
+  left = Math.max(8, left);
+  const top = Math.max(8, Math.min(anchor.top, window.innerHeight - popH - 8));
+  const r = preview.rect;
+  return createPortal(
+    <div className="node-preview no-print" style={{ left, top, width: popW }} role="tooltip">
+      {known ? (
+        <div className="node-preview-img" style={{ width: boxW, height: boxH }}>
+          <img src={preview.image} alt="" />
+          {r && (
+            <div
+              className="node-preview-hl"
+              style={{ left: `${r.x * 100}%`, top: `${r.y * 100}%`, width: `${r.w * 100}%`, height: `${r.h * 100}%` }}
+            />
+          )}
+        </div>
+      ) : (
+        <img className="node-preview-plain" src={preview.image} alt="" />
+      )}
+      <div className="node-preview-caption">{preview.caption}</div>
+    </div>,
+    document.body,
+  );
+}
+
 /** A connector block with one handle per pin on each side (connect by dragging pin to pin). */
 export const ConnectorNode = memo(function ConnectorNode({ data, selected }: NodeProps<ConnFlowNode>) {
+  const hover = useHoverPreview(!!data.preview);
   return (
-    <div className={`cn ${selected ? 'cn-selected' : ''} ${data.free ? 'cn-free' : ''}`}>
+    <div className={`cn ${selected ? 'cn-selected' : ''} ${data.free ? 'cn-free' : ''}`} {...hover.handlers}>
+      {hover.anchor && data.preview && <PreviewPopup preview={data.preview} anchor={hover.anchor} />}
       <div className="cn-head">
         <strong>{data.title}</strong>
         <small>{data.subtitle}</small>
@@ -88,8 +180,9 @@ export const edgeTypes = { wire: WireEdge };
 export function nodeDataFromPcbConnector(c: PcbConnector, placement: { id: string | null; name: string }): ConnNodeData {
   const type = c.connectorType ?? null;
   const count = Math.max(c.pins.length, type?.pinCount ?? 0);
+  const title = connectorDisplayName(c) || type?.name || 'Connector';
   return {
-    title: connectorDisplayName(c) || type?.name || 'Connector',
+    title,
     subtitle: [placement.name, type?.name].filter(Boolean).join(' · '),
     pins: resizePins(c.pins, count),
     free: false,
@@ -98,6 +191,15 @@ export function nodeDataFromPcbConnector(c: PcbConnector, placement: { id: strin
     connectorTypeId: null,
     label: '',
     pinCount: 0,
+    preview: c.pcb
+      ? {
+          image: imgUrl(c.pcb.thumbPath),
+          width: c.pcb.imageWidth,
+          height: c.pcb.imageHeight,
+          rect: { x: c.x, y: c.y, w: c.w, h: c.h },
+          caption: `${placement.name} · ${title}`,
+        }
+      : null,
   };
 }
 
@@ -113,6 +215,7 @@ export function nodeDataFree(label: string, type: ConnectorType | null, pinCount
     connectorTypeId: type?.id ?? null,
     label,
     pinCount: count,
+    preview: type?.thumbPath ? { image: imgUrl(type.thumbPath), width: 0, height: 0, rect: null, caption: type.name } : null,
   };
 }
 

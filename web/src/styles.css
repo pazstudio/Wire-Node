@@ -753,16 +753,6 @@ textarea:focus {
 .length-input {
   width: 90px;
 }
-.avail-group {
-  margin-bottom: 10px;
-}
-.avail-pcb {
-  font-weight: 600;
-  font-size: 0.85rem;
-  color: var(--muted);
-  text-transform: uppercase;
-  margin-bottom: 2px;
-}
 
 /* Connector node */
 .cn {
@@ -921,4 +911,222 @@ textarea:focus {
     border: none;
     padding: 0;
   }
+}
+
+/* Hover preview of a connector node */
+.node-preview {
+  position: fixed;
+  z-index: 1000;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 8px 28px rgba(15, 23, 42, 0.3);
+  padding: 8px;
+  pointer-events: none;
+}
+.node-preview-img {
+  position: relative;
+  overflow: hidden;
+  border-radius: 5px;
+  background: #1e293b;
+}
+.node-preview-img img {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.node-preview-hl {
+  position: absolute;
+  min-width: 6px;
+  min-height: 6px;
+  border: 2px solid #f97316;
+  border-radius: 3px;
+  /* Dims everything except the connector. */
+  box-shadow: 0 0 0 9999px rgba(15, 23, 42, 0.45);
+  animation: node-preview-pulse 1.2s ease-in-out infinite;
+}
+@keyframes node-preview-pulse {
+  50% {
+    outline: 3px solid rgba(249, 115, 22, 0.5);
+    outline-offset: 3px;
+  }
+}
+.node-preview-plain {
+  display: block;
+  max-width: 100%;
+  max-height: 240px;
+  margin: 0 auto;
+  border-radius: 5px;
+}
+.node-preview-caption {
+  font-size: 0.8rem;
+  font-weight: 600;
+  margin-top: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Choosing components for a connection */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.field-label {
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+.placement-picker .search-box {
+  margin: 4px 0 8px;
+}
+.placement-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 8px;
+  max-height: 46vh;
+  overflow-y: auto;
+  padding: 2px;
+}
+.placement-tile {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 400;
+}
+.form .placement-tile {
+  flex-direction: row;
+  font-size: 0.9rem;
+}
+.placement-tile:hover {
+  border-color: #93c5fd;
+}
+.placement-tile.on {
+  border-color: var(--primary);
+  background: #eff6ff;
+}
+.placement-tile img {
+  width: 56px;
+  height: 42px;
+  object-fit: cover;
+  border-radius: 4px;
+  background: #e2e8f0;
+  flex: none;
+}
+.placement-tile-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.placement-tile-text strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Components panel in the connection editor */
+.comp-group {
+  border-top: 1px solid var(--border);
+  padding: 4px 0;
+}
+.comp-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.comp-toggle {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 2px;
+  border: none;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+}
+.comp-toggle:hover {
+  background: #f8fafc;
+}
+.comp-chevron {
+  width: 12px;
+  color: var(--muted);
+}
+.comp-toggle img {
+  width: 36px;
+  height: 27px;
+  object-fit: cover;
+  border-radius: 3px;
+  background: #e2e8f0;
+  flex: none;
+}
+.comp-name {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.comp-item {
+  padding: 3px 0 3px 22px;
+}
+.comp-empty {
+  margin: 2px 0 4px 22px;
+}
+
+/* Autocomplete input */
+.ac-wrap {
+  position: relative;
+  display: block;
+}
+.ac-wrap input {
+  width: 100%;
+}
+.ac-ghost {
+  position: absolute;
+  inset: 0;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  white-space: pre;
+  overflow: hidden;
+  color: #94a3b8;
+  pointer-events: none;
+}
+.ac-typed {
+  color: transparent;
+}
+.ac-list {
+  position: fixed;
+  z-index: 1000;
+  list-style: none;
+  margin: 0;
+  padding: 4px 0;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 6px 20px rgba(15, 23, 42, 0.18);
+  font-size: 0.85rem;
+}
+.ac-list li {
+  padding: 4px 10px;
+  cursor: pointer;
+}
+.ac-list li.active {
+  background: #eff6ff;
+  color: var(--primary);
+}
+.ac-list li.ac-hint {
+  cursor: default;
+  color: var(--muted);
+  font-size: 0.75rem;
+  border-top: 1px solid var(--border);
+  margin-top: 2px;
+  padding-top: 5px;
 }
