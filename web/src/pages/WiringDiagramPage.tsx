@@ -64,6 +64,7 @@ function Diagram({ projectId, conn }: { projectId: string; conn: Connection }) {
           onNodesChange={onNodesChange}
           nodesDraggable={false}
           nodesConnectable={false}
+          edgesReconnectable={false}
           elementsSelectable={false}
           connectionMode={ConnectionMode.Loose}
           fitView

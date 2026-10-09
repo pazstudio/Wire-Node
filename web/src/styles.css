@@ -812,6 +812,16 @@ textarea:focus {
 .react-flow__handle.pin-handle:hover {
   background: #f97316;
 }
+/* Grab zones at both ends of a wire: drag one onto another pin to move that end. */
+.react-flow__edgeupdater {
+  cursor: grab;
+}
+.react-flow__edge:hover .react-flow__edgeupdater,
+.react-flow__edge.selected .react-flow__edgeupdater {
+  fill: rgba(249, 115, 22, 0.25);
+  stroke: #f97316;
+  stroke-width: 1.5;
+}
 
 /* Map */
 .map-pcb {

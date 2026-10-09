@@ -267,6 +267,29 @@ function Editor({
     [addWire],
   );
 
+  // Dragging a wire end onto another pin moves that end; dropping it elsewhere leaves the wire as it was.
+  const onReconnect = useCallback(
+    (old: { id: string }, c: FlowConnection) => {
+      if (!c.source || !c.target || !c.sourceHandle || !c.targetHandle) return;
+      const a = { node: c.source, pin: parseInt(c.sourceHandle, 10) };
+      const b = { node: c.target, pin: parseInt(c.targetHandle, 10) };
+      if (a.node === b.node && a.pin === b.pin) return;
+      const same = (p: { node: string; pin: number }, node: string, pin: number) => p.node === node && p.pin === pin;
+      setWires((ws) =>
+        ws.map((w) => {
+          if (w.id !== old.id) return w;
+          // Keep From/To the same way round: the end that did not move stays where it was.
+          const flip = same(b, w.fromNodeId, w.fromPin) || same(a, w.toNodeId, w.toPin);
+          const [from, to] = flip ? [b, a] : [a, b];
+          return { ...w, fromNodeId: from.node, fromPin: from.pin, toNodeId: to.node, toPin: to.pin };
+        }),
+      );
+      setSelectedWireId(old.id);
+      markDirty();
+    },
+    [markDirty],
+  );
+
   function updateWire(id: string, patch: Partial<WireModel>) {
     setWires((ws) => ws.map((w) => (w.id === id ? { ...w, ...patch } : w)));
     markDirty();
@@ -397,6 +420,8 @@ function Editor({
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
+            onReconnect={onReconnect}
+            reconnectRadius={14}
             onNodeDragStop={markDirty}
             onEdgeClick={(_, e) => setSelectedWireId(e.id)}
             onPaneClick={() => setSelectedWireId(null)}
@@ -470,7 +495,8 @@ function Editor({
                   </label>
                   <p className="small muted">
                     New wires take the next free core of this cable and its color. Drag from a pin to another pin to draw a
-                    wire. Select a wire or connector and press Delete to remove it.
+                    wire, or grab the end of a wire next to its pin and drop it on another pin to move it. Select a wire or
+                    connector and press Delete to remove it.
                   </p>
                 </div>
               </div>
