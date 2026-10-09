@@ -6,6 +6,7 @@ const fullInclude = {
   nodes: {
     include: {
       pcbConnector: { include: { pcb: { select: { id: true, name: true } }, connectorType: true } },
+      projectPcb: { select: { id: true, name: true } },
       connectorType: true,
     },
   },
@@ -23,6 +24,8 @@ const CreateBody = z.object({
 const NodeSchema = z.object({
   id: z.string().min(1),
   pcbConnectorId: z.string().nullable().optional(),
+  /** Which placement of the component in the project; required for new connectors on components. */
+  projectPcbId: z.string().uuid().nullable().optional(),
   connectorTypeId: z.string().nullable().optional(),
   label: z.string().default(''),
   pinCount: z.number().int().min(0).max(1000).default(0),
@@ -53,13 +56,42 @@ const SaveBody = z.object({
 
 type P = { Params: { id: string } };
 
+/** Each placement must be in this project and be the component the connector is drawn on. */
+async function checkPlacements(projectId: string, nodes: z.infer<typeof NodeSchema>[]) {
+  const linked = nodes.filter((n) => n.pcbConnectorId && n.projectPcbId);
+  if (!linked.length) return null;
+  const [placements, connectors] = await Promise.all([
+    prisma.projectPcb.findMany({
+      where: { id: { in: linked.map((n) => n.projectPcbId!) }, projectId },
+      select: { id: true, pcbId: true },
+    }),
+    prisma.pcbConnector.findMany({
+      where: { id: { in: linked.map((n) => n.pcbConnectorId!) } },
+      select: { id: true, pcbId: true },
+    }),
+  ]);
+  const placementPcb = new Map(placements.map((p) => [p.id, p.pcbId]));
+  const connectorPcb = new Map(connectors.map((c) => [c.id, c.pcbId]));
+  for (const n of linked) {
+    const pcbId = placementPcb.get(n.projectPcbId!);
+    if (!pcbId) return 'A connector belongs to a component that is no longer in this project';
+    if (pcbId !== connectorPcb.get(n.pcbConnectorId!)) return 'A connector does not belong to the component it was placed on';
+  }
+  return null;
+}
+
 export default async function connectionRoutes(app: FastifyInstance) {
   app.get<P>('/api/projects/:id/connections', async (req) => {
     const list = await prisma.connection.findMany({
       where: { projectId: req.params.id },
       orderBy: { name: 'asc' },
       include: {
-        nodes: { include: { pcbConnector: { select: { label: true, name: true, pcb: { select: { name: true } } } } } },
+        nodes: {
+          include: {
+            pcbConnector: { select: { label: true, name: true, pcb: { select: { name: true } } } },
+            projectPcb: { select: { name: true } },
+          },
+        },
         _count: { select: { wires: true } },
       },
     });
@@ -72,7 +104,7 @@ export default async function connectionRoutes(app: FastifyInstance) {
       wireCount: c._count.wires,
       endpoints: c.nodes.map((n) =>
         n.pcbConnector
-          ? `${n.pcbConnector.pcb.name}: ${[n.pcbConnector.label, n.pcbConnector.name].filter(Boolean).join(' ') || 'connector'}`
+          ? `${n.projectPcb?.name || n.pcbConnector.pcb.name}: ${[n.pcbConnector.label, n.pcbConnector.name].filter(Boolean).join(' ') || 'connector'}`
           : `${n.label || 'free'} (free)`,
       ),
     }));
@@ -98,7 +130,9 @@ export default async function connectionRoutes(app: FastifyInstance) {
         return reply.code(400).send({ message: 'A wire references a connector that is not in this connection' });
       }
     }
-    await prisma.connection.findUniqueOrThrow({ where: { id } });
+    const conn = await prisma.connection.findUniqueOrThrow({ where: { id } });
+    const problem = await checkPlacements(conn.projectId, b.nodes);
+    if (problem) return reply.code(400).send({ message: problem });
     await prisma.$transaction([
       prisma.connection.update({
         where: { id },
@@ -115,6 +149,7 @@ export default async function connectionRoutes(app: FastifyInstance) {
         data: b.nodes.map((n) => ({
           ...n,
           pcbConnectorId: n.pcbConnectorId ?? null,
+          projectPcbId: n.pcbConnectorId ? (n.projectPcbId ?? null) : null,
           connectorTypeId: n.connectorTypeId ?? null,
           connectionId: id,
         })),

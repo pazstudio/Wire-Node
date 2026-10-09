@@ -20,8 +20,18 @@ export interface Pcb {
   imageHeight: number;
   _count?: { connectors: number };
   projects?: { project: { id: string; name: string } }[];
-  mapX?: number;
-  mapY?: number;
+}
+
+/** A library component placed in a project. The same component can be placed several times. */
+export interface Placement {
+  id: string;
+  projectId: string;
+  pcbId: string;
+  /** Name in this project, e.g. "Peltier Driver - Toolhead1" (the component name if none was given). */
+  name: string;
+  mapX: number;
+  mapY: number;
+  pcb: Pcb;
 }
 
 export interface ConnectorType {
@@ -78,12 +88,16 @@ export interface Cable {
 export interface ConnectionNodeDto {
   id: string;
   pcbConnectorId: string | null;
+  /** Placement of the component in the project; null for free connectors. */
+  projectPcbId: string | null;
   connectorTypeId: string | null;
   label: string;
   pinCount: number;
   x: number;
   y: number;
   pcbConnector?: (PcbConnector & { pcb: { id: string; name: string } }) | null;
+  /** name is empty when the placement uses the component name. */
+  projectPcb?: { id: string; name: string } | null;
   connectorType?: ConnectorType | null;
 }
 
@@ -147,7 +161,7 @@ export interface MapEdge {
 
 export interface MapData {
   project: Project;
-  pcbs: Pcb[];
+  placements: Placement[];
   zones: Zone[];
   edges: MapEdge[];
 }

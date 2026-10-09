@@ -11,8 +11,8 @@ describe('computeMapEdges', () => {
           id: 'c1',
           name: 'A-B',
           nodes: [
-            { id: 'n1', pcbId: 'A' },
-            { id: 'n2', pcbId: 'B' },
+            { id: 'n1', blockId: 'A' },
+            { id: 'n2', blockId: 'B' },
           ],
           wires: [
             { fromNodeId: 'n1', toNodeId: 'n2' },
@@ -33,10 +33,10 @@ describe('computeMapEdges', () => {
           id: 'c1',
           name: 'harness',
           nodes: [
-            { id: 'n1', pcbId: 'A' },
-            { id: 'splice', pcbId: null },
-            { id: 'n2', pcbId: 'B' },
-            { id: 'n3', pcbId: 'C' },
+            { id: 'n1', blockId: 'A' },
+            { id: 'splice', blockId: null },
+            { id: 'n2', blockId: 'B' },
+            { id: 'n3', blockId: 'C' },
           ],
           wires: [
             { fromNodeId: 'n1', toNodeId: 'splice' },
@@ -58,12 +58,12 @@ describe('computeMapEdges', () => {
           id: 'c1',
           name: 'x',
           nodes: [
-            { id: 'n1', pcbId: 'A' },
-            { id: 'n2', pcbId: 'Z' },
+            { id: 'n1', blockId: 'A' },
+            { id: 'n2', blockId: 'Z' },
           ],
           wires: [{ fromNodeId: 'n1', toNodeId: 'n2' }],
         },
-        { id: 'c2', name: 'empty', nodes: [{ id: 'm1', pcbId: 'A' }, { id: 'm2', pcbId: 'B' }], wires: [] },
+        { id: 'c2', name: 'empty', nodes: [{ id: 'm1', blockId: 'A' }, { id: 'm2', blockId: 'B' }], wires: [] },
       ],
       allowed,
     );
@@ -75,8 +75,8 @@ describe('computeMapEdges', () => {
       id,
       name: id,
       nodes: [
-        { id: `${id}a`, pcbId: 'B' },
-        { id: `${id}b`, pcbId: 'A' },
+        { id: `${id}a`, blockId: 'B' },
+        { id: `${id}b`, blockId: 'A' },
       ],
       wires: [{ fromNodeId: `${id}a`, toNodeId: `${id}b` }],
     });

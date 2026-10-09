@@ -17,12 +17,12 @@ import {
   type Node,
   type NodeProps,
 } from '@xyflow/react';
-import { api, errorMessage, imgUrl, type MapData, type MapEdge, type Pcb, type Zone } from '../api';
+import { api, errorMessage, imgUrl, type MapData, type MapEdge, type Placement, type Zone } from '../api';
 import { Loading } from '../components/ui';
 import { withAlpha } from '../colors';
 
 type ResizeParams = { x: number; y: number; width: number; height: number };
-type PcbNodeData = { pcb: Pcb };
+type PcbNodeData = { placement: Placement };
 type ZoneNodeData = { zone: Zone; edit: boolean; onResized: (zoneId: string, p: ResizeParams) => void };
 type PcbFlowNode = Node<PcbNodeData, 'pcb'>;
 type ZoneFlowNode = Node<ZoneNodeData, 'zone'>;
@@ -37,9 +37,10 @@ const PcbNode = memo(function PcbNode({ data, selected }: NodeProps<PcbFlowNode>
       {(Object.keys(SIDES) as (keyof typeof SIDES)[]).map((k) => (
         <Handle key={k} id={k} type="source" position={SIDES[k]} className="map-handle" isConnectable={false} />
       ))}
-      <img src={imgUrl(data.pcb.thumbPath)} alt="" draggable={false} />
-      <div className="map-pcb-name">{data.pcb.name}</div>
-      <div className="small muted">{data.pcb._count?.connectors ?? 0} connectors</div>
+      <img src={imgUrl(data.placement.pcb.thumbPath)} alt="" draggable={false} />
+      <div className="map-pcb-name">{data.placement.name}</div>
+      {data.placement.name !== data.placement.pcb.name && <div className="small muted">{data.placement.pcb.name}</div>}
+      <div className="small muted">{data.placement.pcb._count?.connectors ?? 0} connectors</div>
     </div>
   );
 });
@@ -114,13 +115,13 @@ function MapEditor({ projectId, data }: { projectId: string; data: MapData }) {
 
   const [nodes, setNodes, onNodesChange] = useNodesState<MapNode>([
     ...data.zones.map((z) => zoneNode(z, false)),
-    ...data.pcbs.map(
+    ...data.placements.map(
       (p): PcbFlowNode => ({
         id: p.id,
         type: 'pcb',
-        position: { x: p.mapX ?? 0, y: p.mapY ?? 0 },
+        position: { x: p.mapX, y: p.mapY },
         draggable: false,
-        data: { pcb: p },
+        data: { placement: p },
       }),
     ),
   ]);
@@ -179,7 +180,7 @@ function MapEditor({ projectId, data }: { projectId: string; data: MapData }) {
 
   function saveNodePosition(n: Node) {
     if (n.type === 'pcb') {
-      api.patch(`/api/projects/${projectId}/pcbs/${n.id}`, { mapX: n.position.x, mapY: n.position.y }).catch(report);
+      api.patch(`/api/project-pcbs/${n.id}`, { mapX: n.position.x, mapY: n.position.y }).catch(report);
     } else if (n.type === 'zone') {
       api.put(`/api/zones/${n.id.slice(ZONE_PREFIX.length)}`, { x: n.position.x, y: n.position.y }).catch(report);
     }
@@ -268,7 +269,7 @@ function MapEditor({ projectId, data }: { projectId: string; data: MapData }) {
             onNodesChange={onNodesChange}
             onNodeDragStop={(_e, _n, dragged) => dragged.forEach(saveNodePosition)}
             onNodeClick={(_e, n) => {
-              if (!edit && n.type === 'pcb') navigate(`/projects/${projectId}/pcbs/${n.id}`);
+              if (!edit && n.type === 'pcb') navigate(`/projects/${projectId}/pcbs/${(n as PcbFlowNode).data.placement.pcbId}`);
             }}
             onEdgeClick={(e, edge) => {
               const me = (edge.data as { edge: MapEdge }).edge;
@@ -292,7 +293,7 @@ function MapEditor({ projectId, data }: { projectId: string; data: MapData }) {
             <Controls showInteractive={false} />
             <MiniMap pannable zoomable />
           </ReactFlow>
-          {data.pcbs.length === 0 && (
+          {data.placements.length === 0 && (
             <div className="flow-empty">No components in this project yet. Add components on the project page first.</div>
           )}
           {picker && (

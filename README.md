@@ -18,7 +18,8 @@ Data lives in two Docker volumes:
 | `pgdata`  | PostgreSQL database               |
 | `uploads` | Component and connector pictures (WebP) |
 
-The database schema is applied automatically on start (`prisma db push`).
+The database schema is applied automatically on start (`prisma/upgrade.sql`, then `prisma db push`).
+Existing data is kept when upgrading.
 
 ## Backup and migrating to another server
 
@@ -56,7 +57,7 @@ Requirements: Node.js 20+ and a PostgreSQL server.
 cd server
 cp .env.example .env        # adjust DATABASE_URL
 npm install
-npx prisma db push
+npm run db:push
 npm run dev
 
 # Web (http://localhost:5173, proxies /api and /uploads to :8080)
@@ -72,15 +73,17 @@ Checks: `npm run typecheck` in both folders, `npm test` in `server`.
 In the app, "components" are PCBs, motors, power supplies or any other part with connectors.
 Internally (database tables, API paths such as `/api/pcbs`) they are still called PCBs.
 
-- **Library vs project.** Components, cables and connector types are a shared library. A project attaches
-  components; connections and map zones belong to one project.
+- **Library vs project.** Components, cables and connector types are a shared library, and component names
+  in it are unique. A project places components under a name of its own; the same component can be placed
+  several times (e.g. "Peltier Driver - Toolhead1" and "Peltier Driver - Toolhead2") without uploading it
+  again. Connections and map zones belong to one project.
 - **Component drawings** store rectangle coordinates normalized to the image size (0..1), so they stay on
   the same spot on any screen. Every change is autosaved (debounced, per connector, in order).
   Uploaded photos are auto-rotated from EXIF so phone pictures line up.
 - **Connections** are graphs: connector nodes plus pin-to-pin wires. More than two connectors makes a
   harness; one connector's pins can go to different connectors (splits). Inline connectors or splices
   that are not on a component can be added as "inline" nodes.
-- **Project map** shows one block per component and one line per component pair that shares wires (followed through
+- **Project map** shows one block per placed component and one line per block pair that shares wires (followed through
   inline connectors). Zones are semi-transparent rectangles for grouping, such as "Frame" or "Toolhead".
 
 ## Stack

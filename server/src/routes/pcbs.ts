@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { prisma } from '../db.js';
 import { deleteFiles, readMultipart, saveImage } from '../storage.js';
-import { attachPcb } from './projects.js';
+import { assertPlacementNameFree, PlacementNameField, placePcb } from './projects.js';
 
 const PcbFields = z.object({
   name: z.string().trim().min(1, 'Name is required'),
@@ -30,13 +30,26 @@ const ConnectorBody = z.object({
 
 type P = { Params: { id: string } };
 
+/** Library names are unique, so the same part is not uploaded twice under different names. */
+async function assertLibraryNameFree(name: string, exceptId?: string) {
+  const other = await prisma.pcb.findFirst({
+    where: { name: { equals: name, mode: 'insensitive' }, ...(exceptId ? { NOT: { id: exceptId } } : {}) },
+  });
+  if (other) {
+    throw Object.assign(
+      new Error(`"${other.name}" is already in the component library. Use "Add existing component" to place it again.`),
+      { statusCode: 409 },
+    );
+  }
+}
+
 export default async function pcbRoutes(app: FastifyInstance) {
   app.get('/api/pcbs', async () =>
     prisma.pcb.findMany({
       orderBy: { name: 'asc' },
       include: {
         _count: { select: { connectors: true } },
-        projects: { select: { project: { select: { id: true, name: true } } } },
+        projects: { select: { project: { select: { id: true, name: true } } }, distinct: ['projectId'] },
       },
     }),
   );
@@ -44,7 +57,14 @@ export default async function pcbRoutes(app: FastifyInstance) {
   app.post('/api/pcbs', async (req, reply) => {
     const { fields, file } = await readMultipart(req);
     const meta = PcbFields.parse(fields);
+    const placementName = PlacementNameField.parse(fields.placementName ?? '');
     if (!file) return reply.code(400).send({ message: 'A picture of the component is required' });
+    // Check names before storing anything, so a rejected upload leaves nothing behind.
+    await assertLibraryNameFree(meta.name);
+    if (fields.projectId) {
+      await prisma.project.findUniqueOrThrow({ where: { id: fields.projectId } });
+      await assertPlacementNameFree(fields.projectId, placementName || meta.name);
+    }
     const img = await saveImage(file);
     const pcb = await prisma.pcb.create({
       data: {
@@ -56,7 +76,7 @@ export default async function pcbRoutes(app: FastifyInstance) {
         imageHeight: img.height,
       },
     });
-    if (fields.projectId) await attachPcb(fields.projectId, pcb.id);
+    if (fields.projectId) await placePcb(fields.projectId, pcb.id, placementName);
     return reply.code(201).send(pcb);
   });
 
@@ -65,7 +85,7 @@ export default async function pcbRoutes(app: FastifyInstance) {
       where: { id: req.params.id },
       include: {
         connectors: { include: { connectorType: true }, orderBy: { label: 'asc' } },
-        projects: { select: { project: { select: { id: true, name: true } } } },
+        projects: { select: { project: { select: { id: true, name: true } } }, distinct: ['projectId'] },
       },
     }),
   );
@@ -74,6 +94,7 @@ export default async function pcbRoutes(app: FastifyInstance) {
     const existing = await prisma.pcb.findUniqueOrThrow({ where: { id: req.params.id } });
     const { fields, file } = await readMultipart(req);
     const meta = PcbFields.parse(fields);
+    await assertLibraryNameFree(meta.name, existing.id);
     const img = file ? await saveImage(file) : null;
     const pcb = await prisma.pcb.update({
       where: { id: existing.id },
@@ -99,7 +120,11 @@ export default async function pcbRoutes(app: FastifyInstance) {
   app.get<P>('/api/pcbs/:id/usage', async (req) => {
     const id = req.params.id;
     const [projects, connections] = await Promise.all([
-      prisma.projectPcb.findMany({ where: { pcbId: id }, select: { project: { select: { id: true, name: true } } } }),
+      prisma.projectPcb.findMany({
+        where: { pcbId: id },
+        select: { project: { select: { id: true, name: true } } },
+        distinct: ['projectId'],
+      }),
       prisma.connection.findMany({
         where: { nodes: { some: { pcbConnector: { pcbId: id } } } },
         select: { id: true, name: true, project: { select: { name: true } } },

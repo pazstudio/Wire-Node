@@ -37,7 +37,10 @@ import {
 import { ColorPicker, Loading, SaveIndicator, Swatch } from '../components/ui';
 import { colorLabel } from '../colors';
 
-type AvailableConnector = PcbConnector & { pcb: { id: string; name: string } };
+/** A connector on one placement of a component (a component placed twice lists its connectors twice). */
+type AvailableConnector = PcbConnector & { pcb: { id: string; name: string }; placement: { id: string; name: string } };
+
+const availableKey = (placementId: string | null, connectorId: string | null) => `${placementId}:${connectorId}`;
 
 export default function ConnectionEditorPage() {
   const { pid, cid } = useParams() as { pid: string; cid: string };
@@ -141,6 +144,7 @@ function Editor({
           nodes: nodesRef.current.map((n) => ({
             id: n.id,
             pcbConnectorId: n.data.pcbConnectorId,
+            projectPcbId: n.data.projectPcbId,
             connectorTypeId: n.data.connectorTypeId,
             label: n.data.label,
             pinCount: n.data.pinCount,
@@ -270,7 +274,7 @@ function Editor({
   }
 
   function addPcbConnector(c: AvailableConnector) {
-    const node: ConnFlowNode = { id: uuid(), type: 'connector', position: dropPosition(), data: nodeDataFromPcbConnector(c) };
+    const node: ConnFlowNode = { id: uuid(), type: 'connector', position: dropPosition(), data: nodeDataFromPcbConnector(c, c.placement) };
     setNodes((ns) => [...ns, node]);
     markDirty();
   }
@@ -293,22 +297,24 @@ function Editor({
     markDirty();
   }
 
-  const usedPcbConnectorIds = new Set(nodes.map((n) => n.data.pcbConnectorId).filter(Boolean));
+  const used = new Set(
+    nodes.filter((n) => n.data.pcbConnectorId).map((n) => availableKey(n.data.projectPcbId, n.data.pcbConnectorId)),
+  );
   // Search: every word must match the component, designator, name on board or connector type.
   const terms = search.toLowerCase().split(/\s+/).filter(Boolean);
   const matches = (c: AvailableConnector) => {
     if (!terms.length) return true;
-    const hay = [c.pcb.name, c.label, c.name, c.connectorType?.name, c.connectorType?.crimpName]
+    const hay = [c.placement.name, c.pcb.name, c.label, c.name, c.connectorType?.name, c.connectorType?.crimpName]
       .filter(Boolean)
       .join(' ')
       .toLowerCase();
     return terms.every((t) => hay.includes(t));
   };
   const filtered = available.filter(matches);
-  const byPcb = new Map<string, { name: string; items: AvailableConnector[] }>();
+  const byPlacement = new Map<string, { name: string; items: AvailableConnector[] }>();
   for (const c of filtered) {
-    if (!byPcb.has(c.pcb.id)) byPcb.set(c.pcb.id, { name: c.pcb.name, items: [] });
-    byPcb.get(c.pcb.id)!.items.push(c);
+    if (!byPlacement.has(c.placement.id)) byPlacement.set(c.placement.id, { name: c.placement.name, items: [] });
+    byPlacement.get(c.placement.id)!.items.push(c);
   }
   const selectedWire = wires.find((w) => w.id === selectedWireId) ?? null;
   const selectedNodes = nodes.filter((n) => n.selected);
@@ -459,11 +465,11 @@ function Editor({
                   </p>
                 )}
                 {available.length > 0 && filtered.length === 0 && <p className="small muted">No connectors match “{search}”.</p>}
-                {[...byPcb.entries()].map(([pcbId, group]) => (
-                  <div key={pcbId} className="avail-group">
+                {[...byPlacement.entries()].map(([placementId, group]) => (
+                  <div key={placementId} className="avail-group">
                     <div className="avail-pcb">{group.name}</div>
                     {group.items.map((c) => (
-                      <div key={c.id} className="row-between">
+                      <div key={availableKey(placementId, c.id)} className="row-between">
                         <span>
                           <strong>{c.label || '?'}</strong>
                           {c.name && <> {c.name}</>}
@@ -471,10 +477,10 @@ function Editor({
                         </span>
                         <button
                           className="btn btn-sm"
-                          disabled={usedPcbConnectorIds.has(c.id)}
+                          disabled={used.has(availableKey(placementId, c.id))}
                           onClick={() => addPcbConnector(c)}
                         >
-                          {usedPcbConnectorIds.has(c.id) ? 'Added' : '+ Add'}
+                          {used.has(availableKey(placementId, c.id)) ? 'Added' : '+ Add'}
                         </button>
                       </div>
                     ))}

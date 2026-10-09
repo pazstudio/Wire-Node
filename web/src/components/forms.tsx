@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react';
-import { api, errorMessage, imgUrl, type Cable, type ConnectorType, type Pcb, type Project } from '../api';
+import { useQuery } from '@tanstack/react-query';
+import { api, errorMessage, imgUrl, type Cable, type ConnectorType, type Pcb, type Placement, type Project } from '../api';
 import { ColorPicker, ErrorText, Modal } from './ui';
 
 // ---------- Project ----------
@@ -67,28 +68,49 @@ export function ProjectForm({
 
 // ---------- Component (PCB, motor, power supply, ...) ----------
 
+/** Case-insensitive name comparison used for duplicate checks. */
+export const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+
+/**
+ * Uploads a new library component, or edits one. With a projectId the form also sets the
+ * name in the project (e.g. "Peltier Driver - Toolhead1"); with a placement it edits that name.
+ */
 export function PcbForm({
   pcb,
+  placement,
   projectId,
   onClose,
   onSaved,
+  onUseExisting,
 }: {
   pcb?: Pcb;
+  placement?: Placement;
   projectId?: string;
   onClose: () => void;
   onSaved: (p: Pcb) => void;
+  /** Offered when a new upload has the name of a component already in the library. */
+  onUseExisting?: (p: Pcb) => void;
 }) {
+  const initialPlacementName = placement && placement.name !== placement.pcb.name ? placement.name : '';
   const [name, setName] = useState(pcb?.name ?? '');
+  const [placementName, setPlacementName] = useState(initialPlacementName);
   const [description, setDescription] = useState(pcb?.description ?? '');
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string>(pcb ? imgUrl(pcb.thumbPath) : '');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const library = useQuery({ queryKey: ['pcbs'], queryFn: () => api.get<Pcb[]>('/api/pcbs') });
+  const duplicate = name.trim() ? library.data?.find((p) => p.id !== pcb?.id && sameName(p.name, name)) : undefined;
+  const showPlacementName = !!projectId && (!pcb || !!placement);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
     if (!pcb && !file) {
       setError('Please choose a picture of the component');
+      return;
+    }
+    if (duplicate) {
+      setError(`"${duplicate.name}" is already in the component library.`);
       return;
     }
     setBusy(true);
@@ -97,9 +119,15 @@ export function PcbForm({
       const fd = new FormData();
       fd.append('name', name);
       fd.append('description', description);
-      if (projectId && !pcb) fd.append('projectId', projectId);
+      if (projectId && !pcb) {
+        fd.append('projectId', projectId);
+        fd.append('placementName', placementName);
+      }
       if (file) fd.append('image', file);
       const saved = pcb ? await api.put<Pcb>(`/api/pcbs/${pcb.id}`, fd) : await api.post<Pcb>('/api/pcbs', fd);
+      if (placement && placementName.trim() !== initialPlacementName) {
+        await api.patch(`/api/project-pcbs/${placement.id}`, { name: placementName });
+      }
       onSaved(saved);
     } catch (err) {
       setError(errorMessage(err));
@@ -112,9 +140,43 @@ export function PcbForm({
     <Modal title={pcb ? 'Edit component' : 'Upload component'} onClose={onClose}>
       <form onSubmit={submit} className="form">
         <label>
-          Name
-          <input value={name} onChange={(e) => setName(e.target.value)} required autoFocus />
+          Component name
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            required
+            autoFocus
+            placeholder="e.g. Peltier Driver"
+          />
         </label>
+        {duplicate && (
+          <p className="error small">
+            "{duplicate.name}" is already in the component library
+            {pcb ? '.' : '. Instead of uploading it again, place the existing one in this project under its own name.'}
+            {!pcb && onUseExisting && (
+              <>
+                {' '}
+                <button type="button" className="btn btn-sm" onClick={() => onUseExisting(duplicate)}>
+                  Use existing "{duplicate.name}"
+                </button>
+              </>
+            )}
+          </p>
+        )}
+        {showPlacementName && (
+          <label>
+            Name in this project (optional)
+            <input
+              value={placementName}
+              onChange={(e) => setPlacementName(e.target.value)}
+              placeholder={name ? `${name} - Toolhead1` : 'e.g. Peltier Driver - Toolhead1'}
+            />
+            <span className="hint">
+              Leave empty to use the component name. Use it when the same component is used more than once.
+            </span>
+          </label>
+        )}
+        {pcb && placement && <p className="hint">Component name, description and picture are shared by every project that uses it.</p>}
         <label>
           Description
           <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3} />
@@ -142,7 +204,7 @@ export function PcbForm({
           <button type="button" className="btn" onClick={onClose}>
             Cancel
           </button>
-          <button type="submit" className="btn btn-primary" disabled={busy}>
+          <button type="submit" className="btn btn-primary" disabled={busy || !!duplicate}>
             {busy ? 'Uploading…' : 'Save'}
           </button>
         </div>

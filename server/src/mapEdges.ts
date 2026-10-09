@@ -15,17 +15,17 @@ export interface MapEdge {
 export interface ConnectionGraph {
   id: string;
   name: string;
-  /** pcbId is null for free (inline) connectors. */
-  nodes: { id: string; pcbId: string | null }[];
+  /** Map block (component placement) the node is on; null for free (inline) connectors. */
+  nodes: { id: string; blockId: string | null }[];
   wires: { fromNodeId: string; toNodeId: string }[];
 }
 
 /**
- * Computes PCB-to-PCB edges for the project map.
+ * Computes block-to-block edges for the project map (one block per component placement).
  * Wires are followed through free (inline) connectors, so a harness
  * A -> splice -> B still produces an edge between PCB A and PCB B.
  */
-export function computeMapEdges(connections: ConnectionGraph[], allowedPcbIds: Set<string>): MapEdge[] {
+export function computeMapEdges(connections: ConnectionGraph[], allowedBlockIds: Set<string>): MapEdge[] {
   const edges = new Map<string, MapEdge>();
 
   for (const c of connections) {
@@ -52,10 +52,10 @@ export function computeMapEdges(connections: ConnectionGraph[], allowedPcbIds: S
 
     const pcbsByRoot = new Map<string, Set<string>>();
     for (const n of c.nodes) {
-      if (!n.pcbId || !allowedPcbIds.has(n.pcbId)) continue;
+      if (!n.blockId || !allowedBlockIds.has(n.blockId)) continue;
       const root = find(n.id);
       if (!pcbsByRoot.has(root)) pcbsByRoot.set(root, new Set());
-      pcbsByRoot.get(root)!.add(n.pcbId);
+      pcbsByRoot.get(root)!.add(n.blockId);
     }
     const wiresByRoot = new Map<string, number>();
     for (const w of validWires) {

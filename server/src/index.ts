@@ -6,6 +6,7 @@ import fastifyStatic from '@fastify/static';
 import { ZodError } from 'zod';
 import { Prisma } from '@prisma/client';
 import { UPLOAD_DIR } from './storage.js';
+import { linkLegacyNodes } from './db.js';
 import projectRoutes from './routes/projects.js';
 import pcbRoutes from './routes/pcbs.js';
 import connectorTypeRoutes from './routes/connectorTypes.js';
@@ -69,5 +70,8 @@ app.setNotFoundHandler((req, reply) => {
   }
   return reply.code(404).send({ message: 'Not found' });
 });
+
+const linked = await linkLegacyNodes();
+if (linked) app.log.info(`Linked ${linked} connection node(s) to their component placement`);
 
 await app.listen({ port: PORT, host: '0.0.0.0' });

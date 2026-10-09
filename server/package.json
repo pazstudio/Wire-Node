@@ -5,8 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "start": "prisma db push --skip-generate && tsx src/index.ts",
-    "db:push": "prisma db push",
+    "start": "npm run db:upgrade && prisma db push --skip-generate && tsx src/index.ts",
+    "db:upgrade": "prisma db execute --file prisma/upgrade.sql --schema prisma/schema.prisma",
+    "db:push": "npm run db:upgrade && prisma db push",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },

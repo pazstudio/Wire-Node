@@ -9,15 +9,54 @@ const ProjectBody = z.object({
 });
 
 type P = { Params: { id: string } };
-type PP = { Params: { id: string; pcbId: string } };
 
-export async function attachPcb(projectId: string, pcbId: string) {
-  const count = await prisma.projectPcb.count({ where: { projectId } });
-  await prisma.projectPcb.upsert({
-    where: { projectId_pcbId: { projectId, pcbId } },
-    create: { projectId, pcbId, mapX: (count % 4) * 300, mapY: Math.floor(count / 4) * 260 },
-    update: {},
+/** Name of a placement in its project, e.g. "Peltier Driver - Toolhead1". */
+export const placementName = (p: { name: string; pcb: { name: string } }) => p.name || p.pcb.name;
+
+export const PlacementNameField = z.string().trim().max(200).default('');
+
+function conflict(message: string) {
+  return Object.assign(new Error(message), { statusCode: 409 });
+}
+
+/** Throws 409 if another placement in the project already shows this name. */
+export async function assertPlacementNameFree(projectId: string, name: string, exceptId?: string) {
+  const others = await prisma.projectPcb.findMany({
+    where: { projectId, ...(exceptId ? { NOT: { id: exceptId } } : {}) },
+    select: { name: true, pcb: { select: { name: true } } },
   });
+  const wanted = name.trim().toLowerCase();
+  if (others.some((o) => placementName(o).toLowerCase() === wanted)) {
+    throw conflict(`"${name}" is already used in this project. Give this placement a different name, e.g. "${name} - 2".`);
+  }
+}
+
+/** Places a library component in a project. The same component can be placed several times. */
+export async function placePcb(projectId: string, pcbId: string, name: string) {
+  const pcb = await prisma.pcb.findUniqueOrThrow({ where: { id: pcbId } });
+  await assertPlacementNameFree(projectId, name || pcb.name);
+  const count = await prisma.projectPcb.count({ where: { projectId } });
+  return prisma.projectPcb.create({
+    data: {
+      projectId,
+      pcbId,
+      // Store an empty name when it equals the component name, so renaming the component carries over.
+      name: name === pcb.name ? '' : name,
+      mapX: (count % 4) * 300,
+      mapY: Math.floor(count / 4) * 260,
+    },
+  });
+}
+
+/** Components placed in a project, with the library component they show. */
+export async function listPlacements(projectId: string) {
+  const rows = await prisma.projectPcb.findMany({
+    where: { projectId },
+    include: { pcb: { include: { _count: { select: { connectors: true } } } } },
+  });
+  return rows
+    .map((r) => ({ ...r, name: placementName(r) }))
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
 }
 
 export default async function projectRoutes(app: FastifyInstance) {
@@ -46,44 +85,67 @@ export default async function projectRoutes(app: FastifyInstance) {
     return { ok: true };
   });
 
-  // ----- PCBs attached to a project -----
-  app.get<P>('/api/projects/:id/pcbs', async (req) => {
-    const rows = await prisma.projectPcb.findMany({
-      where: { projectId: req.params.id },
-      include: { pcb: { include: { _count: { select: { connectors: true } } } } },
-    });
-    return rows
-      .map((r) => ({ ...r.pcb, mapX: r.mapX, mapY: r.mapY }))
-      .sort((a, b) => a.name.localeCompare(b.name));
-  });
+  // ----- Components placed in a project -----
+  app.get<P>('/api/projects/:id/pcbs', async (req) => listPlacements(req.params.id));
 
   app.post<P>('/api/projects/:id/pcbs', async (req, reply) => {
-    const { pcbId } = z.object({ pcbId: z.string().min(1) }).parse(req.body);
+    const { pcbId, name } = z.object({ pcbId: z.string().min(1), name: PlacementNameField }).parse(req.body);
     await prisma.project.findUniqueOrThrow({ where: { id: req.params.id } });
-    await prisma.pcb.findUniqueOrThrow({ where: { id: pcbId } });
-    await attachPcb(req.params.id, pcbId);
-    return reply.code(201).send({ ok: true });
+    return reply.code(201).send(await placePcb(req.params.id, pcbId, name));
   });
 
-  app.patch<PP>('/api/projects/:id/pcbs/:pcbId', async (req) => {
-    const data = z.object({ mapX: z.number(), mapY: z.number() }).parse(req.body);
-    return prisma.projectPcb.update({
-      where: { projectId_pcbId: { projectId: req.params.id, pcbId: req.params.pcbId } },
-      data,
-    });
+  app.patch<P>('/api/project-pcbs/:id', async (req) => {
+    const data = z
+      .object({ mapX: z.number(), mapY: z.number(), name: PlacementNameField })
+      .partial()
+      .parse(req.body);
+    const existing = await prisma.projectPcb.findUniqueOrThrow({ where: { id: req.params.id }, include: { pcb: true } });
+    if (data.name !== undefined) {
+      await assertPlacementNameFree(existing.projectId, data.name || existing.pcb.name, existing.id);
+      if (data.name === existing.pcb.name) data.name = '';
+    }
+    return prisma.projectPcb.update({ where: { id: existing.id }, data });
   });
 
-  app.delete<PP>('/api/projects/:id/pcbs/:pcbId', async (req) => {
-    await prisma.projectPcb.deleteMany({ where: { projectId: req.params.id, pcbId: req.params.pcbId } });
+  // Removing a placement also removes its connectors (and their wires) from the project's connections.
+  app.delete<P>('/api/project-pcbs/:id', async (req) => {
+    await prisma.projectPcb.deleteMany({ where: { id: req.params.id } });
     return { ok: true };
   });
 
-  // All connectors drawn on PCBs attached to this project (used by the connection wizard).
-  app.get<P>('/api/projects/:id/connectors', async (req) =>
-    prisma.pcbConnector.findMany({
-      where: { pcb: { projects: { some: { projectId: req.params.id } } } },
-      include: { pcb: { select: { id: true, name: true } }, connectorType: true },
-      orderBy: [{ pcb: { name: 'asc' } }, { label: 'asc' }],
-    }),
-  );
+  app.get<P>('/api/project-pcbs/:id/usage', async (req) => {
+    const connections = await prisma.connection.findMany({
+      where: { nodes: { some: { projectPcbId: req.params.id } } },
+      select: { id: true, name: true },
+      orderBy: { name: 'asc' },
+    });
+    return { connections };
+  });
+
+  // Connectors of every placed component (used by the connection editor).
+  // A component placed twice lists its connectors twice, once per placement.
+  app.get<P>('/api/projects/:id/connectors', async (req) => {
+    const placements = await prisma.projectPcb.findMany({
+      where: { projectId: req.params.id },
+      include: {
+        pcb: {
+          select: {
+            id: true,
+            name: true,
+            connectors: { include: { connectorType: true }, orderBy: { label: 'asc' } },
+          },
+        },
+      },
+    });
+    return placements
+      .map((pl) => ({ pl, name: placementName(pl) }))
+      .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }))
+      .flatMap(({ pl, name }) =>
+        pl.pcb.connectors.map((c) => ({
+          ...c,
+          pcb: { id: pl.pcb.id, name: pl.pcb.name },
+          placement: { id: pl.id, name },
+        })),
+      );
+  });
 }

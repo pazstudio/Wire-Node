@@ -1,30 +1,37 @@
-import { useState } from 'react';
+import { useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { api, errorMessage, imgUrl, type Pcb } from '../../api';
-import { PcbForm } from '../../components/forms';
-import { Loading, Modal } from '../../components/ui';
+import { api, errorMessage, imgUrl, type Pcb, type Placement } from '../../api';
+import { PcbForm, sameName } from '../../components/forms';
+import { ErrorText, Loading, Modal } from '../../components/ui';
 
 export default function PcbsTab({ projectId }: { projectId: string }) {
   const qc = useQueryClient();
   const navigate = useNavigate();
   const q = useQuery({
     queryKey: ['projectPcbs', projectId],
-    queryFn: () => api.get<Pcb[]>(`/api/projects/${projectId}/pcbs`),
+    queryFn: () => api.get<Placement[]>(`/api/projects/${projectId}/pcbs`),
   });
-  const [editing, setEditing] = useState<Pcb | 'new' | null>(null);
-  const [picking, setPicking] = useState(false);
+  const [editing, setEditing] = useState<Placement | 'new' | null>(null);
+  // null = closed, true = open with nothing chosen, Pcb = open with that component chosen.
+  const [picking, setPicking] = useState<Pcb | true | null>(null);
 
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ['projectPcbs', projectId] });
+    qc.invalidateQueries({ queryKey: ['projectConnectors', projectId] });
+    qc.invalidateQueries({ queryKey: ['connections', projectId] });
     qc.invalidateQueries({ queryKey: ['pcbs'] });
     qc.invalidateQueries({ queryKey: ['projects'] });
   };
 
-  async function detach(p: Pcb) {
-    if (!confirm(`Remove "${p.name}" from this project? The component stays in the shared library.`)) return;
+  async function detach(p: Placement) {
     try {
-      await api.del(`/api/projects/${projectId}/pcbs/${p.id}`);
+      const usage = await api.get<{ connections: { name: string }[] }>(`/api/project-pcbs/${p.id}/usage`);
+      const lines = [`Remove "${p.name}" from this project? The component stays in the shared library.`];
+      if (usage.connections.length)
+        lines.push(`Its connectors and their wires will be removed from: ${usage.connections.map((x) => x.name).join(', ')}`);
+      if (!confirm(lines.join('\n\n'))) return;
+      await api.del(`/api/project-pcbs/${p.id}`);
       refresh();
     } catch (e) {
       alert(errorMessage(e));
@@ -51,7 +58,10 @@ export default function PcbsTab({ projectId }: { projectId: string }) {
   return (
     <section>
       <div className="section-head">
-        <p className="muted small">Components (PCBs, motors, power supplies…) live in a shared library and can be used in several projects.</p>
+        <p className="muted small">
+          Components (PCBs, motors, power supplies…) live in a shared library. Add the same component several times
+          under different names, e.g. "Main board - Master" and "Main board - Slave".
+        </p>
         <div className="btn-row">
           <button className="btn" onClick={() => setPicking(true)}>
             Add existing component
@@ -65,20 +75,24 @@ export default function PcbsTab({ projectId }: { projectId: string }) {
       <div className="card-grid">
         {q.data.map((p) => (
           <div key={p.id} className="card">
-            <Link to={`/projects/${projectId}/pcbs/${p.id}`} className="card-main">
-              <img src={imgUrl(p.thumbPath)} alt="" className="card-thumb" loading="lazy" />
+            <Link to={`/projects/${projectId}/pcbs/${p.pcbId}`} className="card-main">
+              <img src={imgUrl(p.pcb.thumbPath)} alt="" className="card-thumb" loading="lazy" />
               <h3>{p.name}</h3>
-              {p.description && <p className="small">{p.description}</p>}
-              <div className="small muted">{p._count?.connectors ?? 0} connectors drawn</div>
+              {p.name !== p.pcb.name && <div className="small muted">Component: {p.pcb.name}</div>}
+              {p.pcb.description && <p className="small">{p.pcb.description}</p>}
+              <div className="small muted">{p.pcb._count?.connectors ?? 0} connectors drawn</div>
             </Link>
             <div className="card-actions">
               <button className="btn btn-sm" onClick={() => setEditing(p)}>
                 Edit
               </button>
+              <button className="btn btn-sm" onClick={() => setPicking(p.pcb)} title="Add this component again under another name">
+                Add another
+              </button>
               <button className="btn btn-sm" onClick={() => detach(p)}>
                 Remove from project
               </button>
-              <button className="btn btn-sm btn-danger" onClick={() => destroy(p)}>
+              <button className="btn btn-sm btn-danger" onClick={() => destroy(p.pcb)}>
                 Delete
               </button>
             </div>
@@ -88,9 +102,14 @@ export default function PcbsTab({ projectId }: { projectId: string }) {
 
       {editing && (
         <PcbForm
-          pcb={editing === 'new' ? undefined : editing}
+          pcb={editing === 'new' ? undefined : editing.pcb}
+          placement={editing === 'new' ? undefined : editing}
           projectId={projectId}
           onClose={() => setEditing(null)}
+          onUseExisting={(p) => {
+            setEditing(null);
+            setPicking(p);
+          }}
           onSaved={(p) => {
             const isNew = editing === 'new';
             setEditing(null);
@@ -102,58 +121,139 @@ export default function PcbsTab({ projectId }: { projectId: string }) {
         />
       )}
       {picking && (
-        <AttachPcbModal
+        <PlacePcbModal
           projectId={projectId}
-          attachedIds={new Set(q.data.map((p) => p.id))}
-          onClose={() => setPicking(false)}
-          onAttached={refresh}
+          placements={q.data}
+          initial={picking === true ? null : picking}
+          onClose={() => setPicking(null)}
+          onPlaced={refresh}
         />
       )}
     </section>
   );
 }
 
-function AttachPcbModal({
+/** Picks a library component and places it in the project under a name of its own. */
+function PlacePcbModal({
   projectId,
-  attachedIds,
+  placements,
+  initial,
   onClose,
-  onAttached,
+  onPlaced,
 }: {
   projectId: string;
-  attachedIds: Set<string>;
+  placements: Placement[];
+  initial: Pcb | null;
   onClose: () => void;
-  onAttached: () => void;
+  onPlaced: () => void;
 }) {
   const q = useQuery({ queryKey: ['pcbs'], queryFn: () => api.get<Pcb[]>('/api/pcbs') });
-  const available = (q.data ?? []).filter((p) => !attachedIds.has(p.id));
+  const placedAs = (p: Pcb) => placements.filter((x) => x.pcbId === p.id).map((x) => x.name);
+  /** The component name for its first placement, then "<name> - 2", "<name> - 3", … */
+  const suggestName = (p: Pcb) => {
+    const n = placedAs(p).length;
+    return n ? `${p.name} - ${n + 1}` : p.name;
+  };
 
-  async function attach(p: Pcb) {
-    try {
-      await api.post(`/api/projects/${projectId}/pcbs`, { pcbId: p.id });
-      onAttached();
-      onClose();
-    } catch (e) {
-      alert(errorMessage(e));
+  // Opens straight on the name step when a component was chosen before opening.
+  const [chosen, setChosen] = useState<Pcb | null>(initial);
+  const [name, setName] = useState(() => (initial ? suggestName(initial) : ''));
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  function choose(p: Pcb) {
+    setChosen(p);
+    setName(suggestName(p));
+    setError(null);
+  }
+
+  const taken = chosen ? placements.find((x) => sameName(x.name, name || chosen.name)) : undefined;
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    if (!chosen) return;
+    if (taken) {
+      setError(`"${taken.name}" is already used in this project. Choose a different name.`);
+      return;
     }
+    setBusy(true);
+    setError(null);
+    try {
+      await api.post(`/api/projects/${projectId}/pcbs`, { pcbId: chosen.id, name: name.trim() });
+      onPlaced();
+      onClose();
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (chosen) {
+    const existing = placedAs(chosen);
+    return (
+      <Modal title={`Add "${chosen.name}"`} onClose={onClose}>
+        <form onSubmit={submit} className="form">
+          <div className="pick-item">
+            <img src={imgUrl(chosen.thumbPath)} alt="" />
+            <span>
+              <strong>{chosen.name}</strong>
+              <span className="small muted">{chosen._count?.connectors ?? 0} connectors</span>
+            </span>
+          </div>
+          <label>
+            Name in this project
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder={chosen.name}
+              autoFocus
+              onFocus={(e) => e.target.select()}
+            />
+            <span className="hint">e.g. "{chosen.name} - Toolhead1" or "{chosen.name} - Master"</span>
+          </label>
+          {existing.length > 0 && (
+            <p className="hint">
+              Already in this project as: {existing.join(', ')}. You can rename those with Edit on their card.
+            </p>
+          )}
+          {taken && <p className="error small">"{taken.name}" is already used in this project.</p>}
+          <ErrorText error={error} />
+          <div className="form-actions">
+            <button type="button" className="btn" onClick={() => setChosen(null)}>
+              Back
+            </button>
+            <button type="submit" className="btn btn-primary" disabled={busy || !!taken}>
+              {busy ? 'Adding…' : 'Add to project'}
+            </button>
+          </div>
+        </form>
+      </Modal>
+    );
   }
 
   return (
     <Modal title="Add component from library" onClose={onClose} wide>
       {!q.data && <Loading error={q.error} />}
-      {q.data && available.length === 0 && <p className="empty">All library components are already in this project.</p>}
+      {q.data && q.data.length === 0 && <p className="empty">The component library is empty. Upload a component first.</p>}
       <div className="pick-list">
-        {available.map((p) => (
-          <button key={p.id} className="pick-item" onClick={() => attach(p)}>
-            <img src={imgUrl(p.thumbPath)} alt="" />
-            <span>
-              <strong>{p.name}</strong>
-              <span className="small muted">
-                {p._count?.connectors ?? 0} connectors
-                {p.projects?.length ? ` · in ${p.projects.map((x) => x.project.name).join(', ')}` : ''}
+        {(q.data ?? []).map((p) => {
+          const here = placedAs(p).length;
+          const elsewhere = (p.projects ?? []).filter((x) => x.project.id !== projectId).map((x) => x.project.name);
+          return (
+            <button key={p.id} className="pick-item" onClick={() => choose(p)}>
+              <img src={imgUrl(p.thumbPath)} alt="" />
+              <span>
+                <strong>{p.name}</strong>
+                <span className="small muted">
+                  {p._count?.connectors ?? 0} connectors
+                  {here > 0 && ` · ${here}× in this project`}
+                  {elsewhere.length > 0 && ` · in ${elsewhere.join(', ')}`}
+                </span>
               </span>
-            </span>
-          </button>
-        ))}
+            </button>
+          );
+        })}
       </div>
     </Modal>
   );

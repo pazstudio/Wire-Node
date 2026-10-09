@@ -4,6 +4,29 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **The same component can be placed in a project more than once**, each time under its own name, such
+  as "Main board - Master" and "Main board - Slave". Connections, the connection editor and the project map
+  keep the placements apart. "Add existing component" lists the whole library, and each card has
+  **Add another**.
+- When uploading a component, an optional **name in this project** can be given next to the component name.
+
+### Changed
+
+- Component names in the library must be unique (ignoring case). Uploading a component whose name is
+  already in the library is refused and offers to place the existing one instead.
+- Removing a component from a project now also removes its connectors and their wires from that project's
+  connections. The confirmation lists the affected connections.
+- Backup format v2. Older v1 backups still restore.
+
+### Upgrading
+
+- Existing data is upgraded automatically on start. Run `npm run db:push` (not `npx prisma db push`) when
+  running from source.
+
 ## [0.1.0] - 2026-10-08
 
 First public release.

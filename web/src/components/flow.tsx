@@ -19,6 +19,7 @@ export type ConnNodeData = {
   pins: Pin[];
   free: boolean;
   pcbConnectorId: string | null;
+  projectPcbId: string | null;
   connectorTypeId: string | null;
   label: string;
   pinCount: number;
@@ -83,17 +84,17 @@ export const WireEdge = memo(function WireEdge({
 export const nodeTypes = { connector: ConnectorNode };
 export const edgeTypes = { wire: WireEdge };
 
-type PcbConnectorWithPcb = PcbConnector & { pcb?: { id: string; name: string } };
-
-export function nodeDataFromPcbConnector(c: PcbConnectorWithPcb): ConnNodeData {
+/** A connector drawn on a component, on one placement of that component in the project. */
+export function nodeDataFromPcbConnector(c: PcbConnector, placement: { id: string | null; name: string }): ConnNodeData {
   const type = c.connectorType ?? null;
   const count = Math.max(c.pins.length, type?.pinCount ?? 0);
   return {
     title: connectorDisplayName(c) || type?.name || 'Connector',
-    subtitle: [c.pcb?.name, type?.name].filter(Boolean).join(' · '),
+    subtitle: [placement.name, type?.name].filter(Boolean).join(' · '),
     pins: resizePins(c.pins, count),
     free: false,
     pcbConnectorId: c.id,
+    projectPcbId: placement.id,
     connectorTypeId: null,
     label: '',
     pinCount: 0,
@@ -108,6 +109,7 @@ export function nodeDataFree(label: string, type: ConnectorType | null, pinCount
     pins: resizePins([], count),
     free: true,
     pcbConnectorId: null,
+    projectPcbId: null,
     connectorTypeId: type?.id ?? null,
     label,
     pinCount: count,
@@ -115,7 +117,12 @@ export function nodeDataFree(label: string, type: ConnectorType | null, pinCount
 }
 
 export function nodeDataFromDto(n: ConnectionNodeDto): ConnNodeData {
-  if (n.pcbConnector) return nodeDataFromPcbConnector(n.pcbConnector);
+  if (n.pcbConnector) {
+    return nodeDataFromPcbConnector(n.pcbConnector, {
+      id: n.projectPcbId,
+      name: n.projectPcb?.name || n.pcbConnector.pcb.name,
+    });
+  }
   return nodeDataFree(n.label, n.connectorType ?? null, n.pinCount);
 }
 

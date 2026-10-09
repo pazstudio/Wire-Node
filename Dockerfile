@@ -25,5 +25,5 @@ ENV NODE_ENV=production \
 EXPOSE 8080
 VOLUME ["/data/uploads"]
 
-# Sync the database schema, then start the server.
-CMD ["sh", "-c", "npx prisma db push --skip-generate && npx tsx src/index.ts"]
+# Apply data-preserving upgrades, sync the database schema, then start the server.
+CMD ["sh", "-c", "npm run db:upgrade && npx prisma db push --skip-generate && npx tsx src/index.ts"]

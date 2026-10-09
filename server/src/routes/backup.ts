@@ -7,7 +7,7 @@ import archiver from 'archiver';
 import * as tar from 'tar';
 import { z } from 'zod';
 import { Prisma } from '@prisma/client';
-import { prisma } from '../db.js';
+import { linkLegacyNodes, prisma } from '../db.js';
 import { UPLOAD_DIR } from '../storage.js';
 
 /**
@@ -16,7 +16,9 @@ import { UPLOAD_DIR } from '../storage.js';
  *   uploads/<file>      every picture referenced by a PCB or connector type
  */
 const FORMAT = 'wire-node-backup';
-const VERSION = 1;
+// v2: projectPcbs have their own id and name; connectionNodes record projectPcbId.
+// v1 backups still restore: placements get new ids and nodes are linked to them.
+const VERSION = 2;
 const MAX_RESTORE_BYTES = 20 * 1024 ** 3; // 20 GB
 
 const TABLES = [
@@ -232,6 +234,7 @@ export default async function backupRoutes(app: FastifyInstance) {
           await create('connectionNodes', (data) => tx.connectionNode.createMany({ data }));
           await create('wires', (data) => tx.wire.createMany({ data }));
           await create('zones', (data) => tx.zone.createMany({ data }));
+          await linkLegacyNodes(tx);
         },
         { timeout: 10 * 60_000, maxWait: 30_000 },
       );
