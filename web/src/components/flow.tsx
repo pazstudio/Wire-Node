@@ -1,5 +1,6 @@
 import { memo, useEffect, useRef, useState, type MouseEvent } from 'react';
 import { createPortal } from 'react-dom';
+import { Link, useParams } from 'react-router-dom';
 import {
   BaseEdge,
   Handle,
@@ -49,20 +50,33 @@ export type NodePreview = {
   /** Where the connector is on the picture (0..1), or null to show the picture only. */
   rect: { x: number; y: number; w: number; h: number } | null;
   caption: string;
+  /** The connector on its component; the preview then links to it for editing. */
+  target: { pcbId: string; connectorId: string } | null;
 };
 
 const PREVIEW_DELAY_MS = 350;
+const PREVIEW_CLOSE_MS = 250; // time to move the pointer from the node onto the preview
 const PREVIEW_MAX_W = 320;
 const PREVIEW_MAX_H = 240;
 
-/** Opens the preview after the pointer rests on the node; closes on leave, press, scroll or zoom. */
+/**
+ * Opens the preview after the pointer rests on the node. It stays open while the pointer is on
+ * the node or the preview, and closes shortly after leaving both, on press, scroll or zoom.
+ */
 function useHoverPreview(enabled: boolean) {
   const [anchor, setAnchor] = useState<DOMRect | null>(null);
   const timer = useRef<number>();
+  const open = useRef(false);
+  open.current = !!anchor;
   const close = () => {
     window.clearTimeout(timer.current);
     setAnchor(null);
   };
+  const closeSoon = () => {
+    window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => setAnchor(null), PREVIEW_CLOSE_MS);
+  };
+  const keepOpen = () => window.clearTimeout(timer.current);
   useEffect(() => () => window.clearTimeout(timer.current), []);
   useEffect(() => {
     if (!anchor) return;
@@ -70,36 +84,48 @@ function useHoverPreview(enabled: boolean) {
     window.addEventListener('wheel', onWheel, { capture: true, passive: true });
     return () => window.removeEventListener('wheel', onWheel, { capture: true });
   }, [anchor]);
-  if (!enabled) return { anchor: null, handlers: {} };
+  if (!enabled) return { anchor: null, handlers: {}, popupHandlers: {} };
   return {
     anchor,
     handlers: {
       onMouseEnter: (e: MouseEvent<HTMLDivElement>) => {
-        if (e.buttons) return; // dragging a wire or the canvas across this node
-        const el = e.currentTarget;
         window.clearTimeout(timer.current);
+        if (open.current || e.buttons) return; // already open, or dragging a wire/the canvas across
+        const el = e.currentTarget;
         timer.current = window.setTimeout(() => setAnchor(el.getBoundingClientRect()), PREVIEW_DELAY_MS);
       },
-      onMouseLeave: close,
+      onMouseLeave: closeSoon,
       onMouseDown: close,
     },
+    popupHandlers: { onMouseEnter: keepOpen, onMouseLeave: closeSoon },
   };
 }
 
-function PreviewPopup({ preview, anchor }: { preview: NodePreview; anchor: DOMRect }) {
+function PreviewPopup({
+  preview,
+  anchor,
+  onMouseEnter,
+  onMouseLeave,
+}: {
+  preview: NodePreview;
+  anchor: DOMRect;
+  onMouseEnter?: () => void;
+  onMouseLeave?: () => void;
+}) {
+  const { pid } = useParams();
   const known = preview.width > 0 && preview.height > 0;
   const scale = known ? Math.min(PREVIEW_MAX_W / preview.width, PREVIEW_MAX_H / preview.height) : 1;
   const boxW = known ? Math.round(preview.width * scale) : PREVIEW_MAX_W;
   const boxH = known ? Math.round(preview.height * scale) : PREVIEW_MAX_H;
   const popW = boxW + 16;
-  const popH = boxH + 48;
+  const popH = boxH + 64;
   let left = anchor.right + 12;
   if (left + popW > window.innerWidth - 8) left = anchor.left - 12 - popW;
   left = Math.max(8, left);
   const top = Math.max(8, Math.min(anchor.top, window.innerHeight - popH - 8));
   const r = preview.rect;
-  return createPortal(
-    <div className="node-preview no-print" style={{ left, top, width: popW }} role="tooltip">
+  const content = (
+    <>
       {known ? (
         <div className="node-preview-img" style={{ width: boxW, height: boxH }}>
           <img src={preview.image} alt="" />
@@ -114,6 +140,32 @@ function PreviewPopup({ preview, anchor }: { preview: NodePreview; anchor: DOMRe
         <img className="node-preview-plain" src={preview.image} alt="" />
       )}
       <div className="node-preview-caption">{preview.caption}</div>
+    </>
+  );
+  const link =
+    preview.target && pid
+      ? `/projects/${pid}/pcbs/${preview.target.pcbId}?edit=1&connector=${preview.target.connectorId}`
+      : null;
+  // The portal is still inside the node in React's tree: keep presses here from reaching the node
+  // (which would close the preview, select the node or start a drag).
+  const stop = (e: MouseEvent) => e.stopPropagation();
+  return createPortal(
+    <div
+      className={`node-preview no-print ${link ? 'node-preview-link' : ''}`}
+      style={{ left, top, width: popW }}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
+      onMouseDown={stop}
+      onClick={stop}
+    >
+      {link ? (
+        <Link to={link} title="Open the component to edit this connector">
+          {content}
+          <div className="node-preview-action">Click to edit connector →</div>
+        </Link>
+      ) : (
+        content
+      )}
     </div>,
     document.body,
   );
@@ -124,7 +176,9 @@ export const ConnectorNode = memo(function ConnectorNode({ data, selected }: Nod
   const hover = useHoverPreview(!!data.preview);
   return (
     <div className={`cn ${selected ? 'cn-selected' : ''} ${data.free ? 'cn-free' : ''}`} {...hover.handlers}>
-      {hover.anchor && data.preview && <PreviewPopup preview={data.preview} anchor={hover.anchor} />}
+      {hover.anchor && data.preview && (
+        <PreviewPopup preview={data.preview} anchor={hover.anchor} {...hover.popupHandlers} />
+      )}
       <div className="cn-head">
         <strong>{data.title}</strong>
         <small>{data.subtitle}</small>
@@ -198,6 +252,7 @@ export function nodeDataFromPcbConnector(c: PcbConnector, placement: { id: strin
           height: c.pcb.imageHeight,
           rect: { x: c.x, y: c.y, w: c.w, h: c.h },
           caption: `${placement.name} · ${title}`,
+          target: { pcbId: c.pcbId, connectorId: c.id },
         }
       : null,
   };
@@ -215,7 +270,7 @@ export function nodeDataFree(label: string, type: ConnectorType | null, pinCount
     connectorTypeId: type?.id ?? null,
     label,
     pinCount: count,
-    preview: type?.thumbPath ? { image: imgUrl(type.thumbPath), width: 0, height: 0, rect: null, caption: type.name } : null,
+    preview: type?.thumbPath ? { image: imgUrl(type.thumbPath), width: 0, height: 0, rect: null, caption: type.name, target: null } : null,
   };
 }
 

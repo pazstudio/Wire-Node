@@ -213,8 +213,10 @@ function PcbEditor({ pcb, projectId, types }: { pcb: PcbDetail; projectId: strin
 
   const [mode, setMode] = useState<'view' | 'edit'>(params.get('edit') === '1' ? 'edit' : 'view');
   const [tool, setTool] = useState<'draw' | 'pan'>('draw');
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [panelId, setPanelId] = useState<string | null>(null);
+  // ?connector=<id> opens that connector (e.g. from the preview in a connection diagram).
+  const linkedId = pcb.connectors.some((c) => c.id === params.get('connector')) ? params.get('connector') : null;
+  const [selectedId, setSelectedId] = useState<string | null>(params.get('edit') === '1' ? linkedId : null);
+  const [panelId, setPanelId] = useState<string | null>(linkedId);
   const [draft, setDraft] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
   const [creatingTypeFor, setCreatingTypeFor] = useState<string | null>(null);
 
