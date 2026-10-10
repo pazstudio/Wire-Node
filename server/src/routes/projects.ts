@@ -40,10 +40,18 @@ export async function assertPlacementNameFree(projectId: string, name: string, e
   }
 }
 
+/** Throws 400 unless the folder is a components folder of the project. */
+export async function assertComponentFolder(projectId: string, folderId: string | null | undefined) {
+  if (folderId && !(await folderInProject(folderId, projectId, 'components'))) {
+    throw Object.assign(new Error('That folder is not in this project'), { statusCode: 400 });
+  }
+}
+
 /** Places a library component in a project. The same component can be placed several times. */
-export async function placePcb(projectId: string, pcbId: string, name: string) {
+export async function placePcb(projectId: string, pcbId: string, name: string, folderId: string | null = null) {
   const pcb = await prisma.pcb.findUniqueOrThrow({ where: { id: pcbId } });
   await assertPlacementNameFree(projectId, name || pcb.name);
+  await assertComponentFolder(projectId, folderId);
   const count = await prisma.projectPcb.count({ where: { projectId } });
   return prisma.projectPcb.create({
     data: {
@@ -53,6 +61,7 @@ export async function placePcb(projectId: string, pcbId: string, name: string) {
       name: name === pcb.name ? '' : name,
       mapX: (count % 4) * 300,
       mapY: Math.floor(count / 4) * 260,
+      folderId,
     },
   });
 }
@@ -98,9 +107,11 @@ export default async function projectRoutes(app: FastifyInstance) {
   app.get<P>('/api/projects/:id/pcbs', async (req) => listPlacements(req.params.id));
 
   app.post<P>('/api/projects/:id/pcbs', async (req, reply) => {
-    const { pcbId, name } = z.object({ pcbId: z.string().min(1), name: PlacementNameField }).parse(req.body);
+    const { pcbId, name, folderId } = z
+      .object({ pcbId: z.string().min(1), name: PlacementNameField, folderId: z.string().nullable().default(null) })
+      .parse(req.body);
     await prisma.project.findUniqueOrThrow({ where: { id: req.params.id } });
-    return reply.code(201).send(await placePcb(req.params.id, pcbId, name));
+    return reply.code(201).send(await placePcb(req.params.id, pcbId, name, folderId));
   });
 
   app.patch<P>('/api/project-pcbs/:id', async (req, reply) => {
@@ -109,9 +120,7 @@ export default async function projectRoutes(app: FastifyInstance) {
       .partial()
       .parse(req.body);
     const existing = await prisma.projectPcb.findUniqueOrThrow({ where: { id: req.params.id }, include: { pcb: true } });
-    if (data.folderId && !(await folderInProject(data.folderId, existing.projectId, 'components'))) {
-      return reply.code(400).send({ message: 'That folder is not in this project' });
-    }
+    await assertComponentFolder(existing.projectId, data.folderId);
     if (data.name !== undefined) {
       await assertPlacementNameFree(existing.projectId, data.name || existing.pcb.name, existing.id);
       if (data.name === existing.pcb.name) data.name = '';

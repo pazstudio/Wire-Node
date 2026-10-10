@@ -60,12 +60,24 @@ const WireSchema = z.object({
   note: z.string().default(''),
 });
 
+const ZoneSchema = z.object({
+  id: z.string().min(1).max(100),
+  name: z.string().max(200).default(''),
+  color: z.string().max(50).default('#3b82f6'),
+  x: z.number().finite(),
+  y: z.number().finite(),
+  w: z.number().positive().max(1e6),
+  h: z.number().positive().max(1e6),
+});
+
 const SaveBody = z.object({
   name: z.string().trim().min(1, 'Name is required'),
   description: z.string().default(''),
   lengthMm: LengthMm,
   /** Omitted = keep the components chosen before. */
   placementIds: PlacementIds.optional(),
+  /** Omitted = keep the zones as they were. */
+  zones: z.array(ZoneSchema).max(500).optional(),
   nodes: z.array(NodeSchema),
   wires: z.array(WireSchema),
 });
@@ -176,6 +188,7 @@ export default async function connectionRoutes(app: FastifyInstance) {
           lengthMm: b.lengthMm ?? null,
           kind: b.nodes.length > 2 ? 'harness' : 'direct',
           ...(placementIds ? { placementIds } : {}),
+          ...(b.zones ? { zones: b.zones } : {}),
         },
       }),
       prisma.wire.deleteMany({ where: { connectionId: id } }),

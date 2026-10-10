@@ -9,6 +9,7 @@ import {
   connectorDisplayName,
   errorMessage,
   imgUrl,
+  nextNumberedName,
   resizePins,
   uuid,
   type ConnectorType,
@@ -290,10 +291,13 @@ function PcbEditor({ pcb, projectId, types }: { pcb: PcbDetail; projectId: strin
   function duplicateRect(id: string) {
     const src = rectsRef.current.find((r) => r.id === id);
     if (!src) return;
+    // Number the copy like the original: "V.out1" -> "V.out2". A name is only numbered if it already ends in a number.
+    const rs = rectsRef.current;
     const copy: PcbConnector = {
       ...src,
       id: uuid(),
-      label: `${src.label} copy`,
+      label: src.label ? nextNumberedName(src.label, rs.map((r) => r.label)) : '',
+      name: /\d$/.test(src.name) ? nextNumberedName(src.name, rs.map((r) => r.name)) : src.name,
       x: clamp(src.x + 0.02, 0, 1 - src.w),
       y: clamp(src.y + 0.02, 0, 1 - src.h),
       pins: src.pins.map((p) => ({ ...p })),

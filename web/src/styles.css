@@ -861,14 +861,26 @@ textarea:focus {
   border: 2px dashed;
   border-radius: 12px;
 }
+.map-zone-selected {
+  border-style: solid;
+}
 .map-zone-label {
   display: inline-block;
   padding: 6px 10px;
   font-weight: 700;
   font-size: 14px;
 }
-.react-flow__node.zone-locked {
+/* A zone is grabbed by its label (and resized by its corners); clicks inside it reach the canvas,
+   so a selection box can start there and blocks in the zone stay clickable. */
+.react-flow__node.react-flow__node-zone {
   pointer-events: none !important;
+}
+.react-flow__node-zone:not(.zone-locked) .map-zone-label,
+.react-flow__node-zone:not(.zone-locked) .react-flow__resize-control {
+  pointer-events: all;
+}
+.react-flow__node-zone:not(.zone-locked) .map-zone-label {
+  cursor: grab;
 }
 .edge-picker {
   position: absolute;

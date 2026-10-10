@@ -13,6 +13,13 @@ and this project uses [Semantic Versioning](https://semver.org/).
   keep the placements apart. "Add existing component" lists the whole library, and each card has
   **Add another**.
 - When uploading a component, an optional **name in this project** can be given next to the component name.
+- **Zones in the connection editor** group connectors by machine part (e.g. "Frame", "Printbed", "Toolhead").
+  With connectors selected, **+ Zone** draws the zone around them. Zones also show on the wiring diagram.
+- Dragging a zone by its name (on the project map or in a connection) moves everything inside it along.
+- **Box selection**: drag on empty canvas to select several connectors (connection editor) or component blocks
+  (project map, Edit mode) and move them together. Pan with the right or middle mouse button, or hold Space.
+- Choose a **folder** when uploading a component or adding an existing one. "Add another" suggests the folder
+  of the card it was clicked on.
 
 ### Changed
 
@@ -20,7 +27,9 @@ and this project uses [Semantic Versioning](https://semver.org/).
   already in the library is refused and offers to place the existing one instead.
 - Removing a component from a project now also removes its connectors and their wires from that project's
   connections. The confirmation lists the affected connections.
-- Backup format v2. Older v1 backups still restore.
+- Duplicating a connector on a component continues its numbering ("V.out1" becomes "V.out2", "J3" the next free
+  J number) instead of adding "copy". A name that ends in a number is numbered the same way.
+- Backup format v5 (folders, connection zones). Older v1–v4 backups still restore.
 
 ### Upgrading
 

@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { api, errorMessage, imgUrl, type Cable, type ConnectorType, type Pcb, type Placement, type Project } from '../api';
+import { api, errorMessage, imgUrl, type Cable, type ConnectorType, type Folder, type Pcb, type Placement, type Project } from '../api';
+import { FolderField } from './folders';
 import { ColorPicker, ErrorText, Modal } from './ui';
 
 // ---------- Project ----------
@@ -79,6 +80,7 @@ export function PcbForm({
   pcb,
   placement,
   projectId,
+  folders,
   onClose,
   onSaved,
   onUseExisting,
@@ -86,15 +88,18 @@ export function PcbForm({
   pcb?: Pcb;
   placement?: Placement;
   projectId?: string;
+  /** Component folders of the project; a new upload can go straight into one. */
+  folders?: Folder[];
   onClose: () => void;
   onSaved: (p: Pcb) => void;
-  /** Offered when a new upload has the name of a component already in the library. */
-  onUseExisting?: (p: Pcb) => void;
+  /** Offered when a new upload has the name of a component already in the library (with the folder chosen so far). */
+  onUseExisting?: (p: Pcb, folderId: string | null) => void;
 }) {
   const initialPlacementName = placement && placement.name !== placement.pcb.name ? placement.name : '';
   const [name, setName] = useState(pcb?.name ?? '');
   const [placementName, setPlacementName] = useState(initialPlacementName);
   const [description, setDescription] = useState(pcb?.description ?? '');
+  const [folderId, setFolderId] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string>(pcb ? imgUrl(pcb.thumbPath) : '');
   const [error, setError] = useState<string | null>(null);
@@ -122,6 +127,7 @@ export function PcbForm({
       if (projectId && !pcb) {
         fd.append('projectId', projectId);
         fd.append('placementName', placementName);
+        if (folderId) fd.append('folderId', folderId);
       }
       if (file) fd.append('image', file);
       const saved = pcb ? await api.put<Pcb>(`/api/pcbs/${pcb.id}`, fd) : await api.post<Pcb>('/api/pcbs', fd);
@@ -156,7 +162,7 @@ export function PcbForm({
             {!pcb && onUseExisting && (
               <>
                 {' '}
-                <button type="button" className="btn btn-sm" onClick={() => onUseExisting(duplicate)}>
+                <button type="button" className="btn btn-sm" onClick={() => onUseExisting(duplicate, folderId)}>
                   Use existing "{duplicate.name}"
                 </button>
               </>
@@ -176,6 +182,7 @@ export function PcbForm({
             </span>
           </label>
         )}
+        {projectId && !pcb && <FolderField folders={folders} value={folderId} onChange={setFolderId} />}
         {pcb && placement && <p className="hint">Component name, description and picture are shared by every project that uses it.</p>}
         <label>
           Description

@@ -7,7 +7,6 @@ import {
   Controls,
   Handle,
   MiniMap,
-  NodeResizer,
   Position,
   ReactFlow,
   ReactFlowProvider,
@@ -19,17 +18,22 @@ import {
 } from '@xyflow/react';
 import { api, errorMessage, imgUrl, type MapData, type MapEdge, type Placement, type Zone } from '../api';
 import { Loading } from '../components/ui';
-import { withAlpha } from '../colors';
+import {
+  boxSelectProps,
+  useZoneCarry,
+  ZONE_COLOR,
+  ZONE_PREFIX,
+  zoneFlowNode,
+  ZoneNode,
+  type ZoneFlowNode,
+  type ZoneNodeData,
+} from '../components/zones';
 
-type ResizeParams = { x: number; y: number; width: number; height: number };
 type PcbNodeData = { placement: Placement };
-type ZoneNodeData = { zone: Zone; edit: boolean; onResized: (zoneId: string, p: ResizeParams) => void };
 type PcbFlowNode = Node<PcbNodeData, 'pcb'>;
-type ZoneFlowNode = Node<ZoneNodeData, 'zone'>;
 type MapNode = PcbFlowNode | ZoneFlowNode;
 
 const SIDES = { t: Position.Top, r: Position.Right, b: Position.Bottom, l: Position.Left } as const;
-const ZONE_PREFIX = 'zone-';
 
 const PcbNode = memo(function PcbNode({ data, selected }: NodeProps<PcbFlowNode>) {
   return (
@@ -42,26 +46,6 @@ const PcbNode = memo(function PcbNode({ data, selected }: NodeProps<PcbFlowNode>
       {data.placement.name !== data.placement.pcb.name && <div className="small muted">{data.placement.pcb.name}</div>}
       <div className="small muted">{data.placement.pcb._count?.connectors ?? 0} connectors</div>
     </div>
-  );
-});
-
-const ZoneNode = memo(function ZoneNode({ data, selected }: NodeProps<ZoneFlowNode>) {
-  const { zone } = data;
-  return (
-    <>
-      <NodeResizer
-        isVisible={data.edit && selected}
-        minWidth={120}
-        minHeight={80}
-        color={zone.color}
-        onResizeEnd={(_, p) => data.onResized(zone.id, p)}
-      />
-      <div className="map-zone" style={{ background: withAlpha(zone.color, 0.12), borderColor: withAlpha(zone.color, 0.7) }}>
-        <span className="map-zone-label" style={{ color: zone.color }}>
-          {zone.name}
-        </span>
-      </div>
-    </>
   );
 });
 
@@ -93,25 +77,11 @@ function MapEditor({ projectId, data }: { projectId: string; data: MapData }) {
 
   const report = (e: unknown) => setError(`Could not save: ${errorMessage(e)}`);
 
-  const onResized = useCallback((zoneId: string, p: ResizeParams) => {
+  const onResized = useCallback<NonNullable<ZoneNodeData['onResized']>>((zoneId, p) => {
     api.put(`/api/zones/${zoneId}`, { x: p.x, y: p.y, w: p.width, h: p.height }).catch(report);
   }, []);
 
-  const zoneNode = useCallback(
-    (z: Zone, editing: boolean): ZoneFlowNode => ({
-      id: ZONE_PREFIX + z.id,
-      type: 'zone',
-      position: { x: z.x, y: z.y },
-      width: z.w,
-      height: z.h,
-      zIndex: -1,
-      draggable: editing,
-      selectable: editing,
-      className: editing ? '' : 'zone-locked',
-      data: { zone: z, edit: editing, onResized },
-    }),
-    [onResized],
-  );
+  const zoneNode = useCallback((z: Zone, editing: boolean) => zoneFlowNode(z, editing, onResized), [onResized]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState<MapNode>([
     ...data.zones.map((z) => zoneNode(z, false)),
@@ -125,6 +95,7 @@ function MapEditor({ projectId, data }: { projectId: string; data: MapData }) {
       }),
     ),
   ]);
+  const carry = useZoneCarry(setNodes);
 
   // Switch between view and edit mode.
   useEffect(() => {
@@ -193,7 +164,7 @@ function MapEditor({ projectId, data }: { projectId: string; data: MapData }) {
     try {
       const z = await api.post<Zone>(`/api/projects/${projectId}/zones`, {
         name: 'New zone',
-        color: '#3b82f6',
+        color: ZONE_COLOR,
         x: center.x - 200,
         y: center.y - 150,
         w: 400,
@@ -248,7 +219,7 @@ function MapEditor({ projectId, data }: { projectId: string; data: MapData }) {
       </div>
       <p className="hint">
         {edit
-          ? 'Drag component blocks to organize them. Add zones to group parts of the machine; select a zone to rename, recolor or resize it.'
+          ? 'Drag component blocks to organize them; drag on empty space to select several and move them together (pan with the right mouse button or by holding Space). Add zones to group parts of the machine: drag a zone by its name to move it with everything inside, select it to rename, recolor or resize it.'
           : 'Click a component to open it. Click a line to open the connection with its cable and pin details.'}
       </p>
       {error && (
@@ -267,7 +238,9 @@ function MapEditor({ projectId, data }: { projectId: string; data: MapData }) {
             edges={edges}
             nodeTypes={nodeTypes}
             onNodesChange={onNodesChange}
-            onNodeDragStop={(_e, _n, dragged) => dragged.forEach(saveNodePosition)}
+            onNodeDragStart={carry.onNodeDragStart}
+            onNodeDrag={carry.onNodeDrag}
+            onNodeDragStop={(e, n, dragged) => [...dragged, ...carry.onNodeDragStop(e, n, dragged)].forEach(saveNodePosition)}
             onNodeClick={(_e, n) => {
               if (!edit && n.type === 'pcb') navigate(`/projects/${projectId}/pcbs/${(n as PcbFlowNode).data.placement.pcbId}`);
             }}
@@ -285,6 +258,7 @@ function MapEditor({ projectId, data }: { projectId: string; data: MapData }) {
             elevateNodesOnSelect={false}
             connectionMode={ConnectionMode.Loose}
             deleteKeyCode={null}
+            {...(edit ? boxSelectProps : {})}
             fitView
             minZoom={0.05}
             proOptions={{ hideAttribution: true }}

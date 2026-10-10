@@ -139,6 +139,32 @@ export function LooseSection({
 }
 
 /** Dropdown to move one item to a folder (works where drag and drop does not, e.g. touch screens). */
+/** Labeled folder choice for forms that add an item; shows nothing when the tab has no folders. */
+export function FolderField({
+  folders,
+  value,
+  onChange,
+}: {
+  folders: Folder[] | undefined;
+  value: string | null;
+  onChange: (folderId: string | null) => void;
+}) {
+  if (!folders?.length) return null;
+  return (
+    <label>
+      Folder
+      <select value={value ?? ''} onChange={(e) => onChange(e.target.value || null)}>
+        <option value="">No folder</option>
+        {folders.map((f) => (
+          <option key={f.id} value={f.id}>
+            📁 {f.name}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
 export function FolderSelect({
   folders,
   value,

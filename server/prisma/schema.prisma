@@ -137,6 +137,9 @@ model Connection {
   /// Components (ProjectPcb ids) chosen for this connection; the editor lists only their connectors.
   /// Placements that already have connectors in the diagram count as chosen even if missing here.
   placementIds String[]        @default([])
+  /// Zones drawn in the diagram to group connectors by machine part (e.g. "Frame", "Toolhead").
+  /// [{ id, name, color, x, y, w, h }]
+  zones       Json             @default("[]")
   /// Folder on the Connections tab; null = not in a folder.
   folderId    String?
   createdAt   DateTime         @default(now())

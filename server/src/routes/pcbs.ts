@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { prisma } from '../db.js';
 import { deleteFiles, readMultipart, saveImage } from '../storage.js';
-import { assertPlacementNameFree, PlacementNameField, placePcb } from './projects.js';
+import { assertComponentFolder, assertPlacementNameFree, PlacementNameField, placePcb } from './projects.js';
 
 const PcbFields = z.object({
   name: z.string().trim().min(1, 'Name is required'),
@@ -64,6 +64,7 @@ export default async function pcbRoutes(app: FastifyInstance) {
     if (fields.projectId) {
       await prisma.project.findUniqueOrThrow({ where: { id: fields.projectId } });
       await assertPlacementNameFree(fields.projectId, placementName || meta.name);
+      await assertComponentFolder(fields.projectId, fields.folderId);
     }
     const img = await saveImage(file);
     const pcb = await prisma.pcb.create({
@@ -76,7 +77,7 @@ export default async function pcbRoutes(app: FastifyInstance) {
         imageHeight: img.height,
       },
     });
-    if (fields.projectId) await placePcb(fields.projectId, pcb.id, placementName);
+    if (fields.projectId) await placePcb(fields.projectId, pcb.id, placementName, fields.folderId || null);
     return reply.code(201).send(pcb);
   });
 

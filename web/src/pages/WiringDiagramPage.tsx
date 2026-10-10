@@ -5,7 +5,11 @@ import { Background, ConnectionMode, Controls, ReactFlow, ReactFlowProvider, use
 import { api, formatLength, type Connection } from '../api';
 import { buildEdges, edgeTypes, nodesFromDtos, nodeTypes, pinLabel, type ConnFlowNode } from '../components/flow';
 import { Loading, Swatch } from '../components/ui';
+import { zoneFlowNode, ZoneNode, type ZoneFlowNode } from '../components/zones';
 import { colorLabel } from '../colors';
+
+const diagramNodeTypes = { ...nodeTypes, zone: ZoneNode };
+const isConnector = (n: ConnFlowNode | ZoneFlowNode): n is ConnFlowNode => n.type === 'connector';
 
 export default function WiringDiagramPage() {
   const { pid, cid } = useParams() as { pid: string; cid: string };
@@ -24,11 +28,13 @@ export default function WiringDiagramPage() {
 
 function Diagram({ projectId, conn }: { projectId: string; conn: Connection }) {
   // Read-only nodes get pointer-events: none from React Flow; keep them hoverable for the picture preview.
-  const [nodes, , onNodesChange] = useNodesState<ConnFlowNode>(
-    nodesFromDtos(conn.nodes).map((n) => ({ ...n, style: { pointerEvents: 'all' } })),
-  );
-  const edges = useMemo(() => buildEdges(nodes, conn.wires), [nodes, conn.wires]);
-  const nodeById = new Map(nodes.map((n) => [n.id, n]));
+  const [nodes, , onNodesChange] = useNodesState<ConnFlowNode | ZoneFlowNode>([
+    ...(conn.zones ?? []).map((z) => zoneFlowNode(z, false)),
+    ...nodesFromDtos(conn.nodes).map((n) => ({ ...n, style: { pointerEvents: 'all' as const } })),
+  ]);
+  const connNodes = useMemo(() => nodes.filter(isConnector), [nodes]);
+  const edges = useMemo(() => buildEdges(connNodes, conn.wires), [connNodes, conn.wires]);
+  const nodeById = new Map(connNodes.map((n) => [n.id, n]));
 
   return (
     <div className="editor-page">
@@ -59,7 +65,7 @@ function Diagram({ projectId, conn }: { projectId: string; conn: Connection }) {
         <ReactFlow
           nodes={nodes}
           edges={edges}
-          nodeTypes={nodeTypes}
+          nodeTypes={diagramNodeTypes}
           edgeTypes={edgeTypes}
           onNodesChange={onNodesChange}
           nodesDraggable={false}
@@ -74,7 +80,7 @@ function Diagram({ projectId, conn }: { projectId: string; conn: Connection }) {
           <Background gap={20} />
           <Controls showInteractive={false} />
         </ReactFlow>
-        {nodes.length === 0 && <div className="flow-empty">This connection is empty. Click Edit to add connectors and wires.</div>}
+        {connNodes.length === 0 && <div className="flow-empty">This connection is empty. Click Edit to add connectors and wires.</div>}
       </div>
 
       <section className="panel wire-table">

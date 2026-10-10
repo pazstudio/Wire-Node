@@ -157,6 +157,8 @@ export interface Connection {
   lengthMm: number | null;
   /** Components chosen for this connection (placement ids). */
   placementIds: string[];
+  /** Zones drawn in the diagram (e.g. "Frame", "Toolhead"). */
+  zones: ZoneShape[];
   nodes: ConnectionNodeDto[];
   wires: WireDto[];
 }
@@ -173,15 +175,19 @@ export interface ConnectionSummary {
   endpoints: string[];
 }
 
-export interface Zone {
+/** A named rectangle grouping blocks by machine part, on the project map or in a connection diagram. */
+export interface ZoneShape {
   id: string;
-  projectId: string;
   name: string;
   color: string;
   x: number;
   y: number;
   w: number;
   h: number;
+}
+
+export interface Zone extends ZoneShape {
+  projectId: string;
 }
 
 export interface MapEdge {
@@ -254,6 +260,21 @@ export function errorMessage(e: unknown) {
 /** "J3 · Power" style display name for a connector drawn on a board. */
 export function connectorDisplayName(c: { label: string; name?: string | null }) {
   return [c.label, c.name].filter(Boolean).join(' · ');
+}
+
+/**
+ * Next name in a numbered series that is not taken yet (ignoring case), keeping zero padding:
+ * "V.out1" -> "V.out2", "J09" -> "J10", "FAN" -> "FAN2".
+ */
+export function nextNumberedName(name: string, taken: Iterable<string>): string {
+  const used = new Set([...taken].map((t) => t.trim().toLowerCase()));
+  const m = /^(.*?)(\d+)$/.exec(name);
+  const base = m ? m[1] : name;
+  const width = m ? m[2].length : 0;
+  let n = m ? parseInt(m[2], 10) + 1 : 2;
+  const make = (i: number) => `${base}${String(i).padStart(width, '0')}`;
+  while (used.has(make(n).toLowerCase())) n++;
+  return make(n);
 }
 
 /** Formats a length in mm, e.g. 1250 -> "1250 mm". */

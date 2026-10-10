@@ -24,6 +24,7 @@ import {
   type Placement,
   type ProjectConnector,
   type WireModel,
+  type ZoneShape,
   parseLength,
 } from '../api';
 import {
@@ -37,10 +38,25 @@ import {
   type ConnFlowNode,
 } from '../components/flow';
 import { PlacementPicker } from '../components/placements';
+import {
+  boxSelectProps,
+  useZoneCarry,
+  ZONE_COLOR,
+  zoneAround,
+  zoneFlowNode,
+  zoneFromNode,
+  ZoneNode,
+  type ZoneFlowNode,
+} from '../components/zones';
 import { ColorPicker, Loading, Modal, SaveIndicator, Swatch } from '../components/ui';
 import { colorLabel } from '../colors';
 
 const availableKey = (placementId: string | null, connectorId: string | null) => `${placementId}:${connectorId}`;
+
+type EditorNode = ConnFlowNode | ZoneFlowNode;
+const editorNodeTypes = { ...nodeTypes, zone: ZoneNode };
+const isConnector = (n: EditorNode): n is ConnFlowNode => n.type === 'connector';
+const isZone = (n: EditorNode): n is ZoneFlowNode => n.type === 'zone';
 
 export default function ConnectionEditorPage() {
   const { pid, cid } = useParams() as { pid: string; cid: string };
@@ -99,7 +115,6 @@ function Editor({
   const rf = useReactFlow();
   const flowWrap = useRef<HTMLDivElement>(null);
 
-  const [nodes, setNodes, onNodesChangeBase] = useNodesState<ConnFlowNode>(nodesFromDtos(conn.nodes));
   const [wires, setWires] = useState<WireModel[]>(() =>
     conn.wires.map(({ id, fromNodeId, fromPin, toNodeId, toPin, cableId, coreIndex, color, lengthMm, note }) => ({
       id,
@@ -132,6 +147,13 @@ function Editor({
   const [dirty, setDirty] = useState(0);
   const markDirty = useCallback(() => setDirty((d) => d + 1), []);
 
+  const [nodes, setNodes, onNodesChangeBase] = useNodesState<EditorNode>([
+    ...(conn.zones ?? []).map((z) => zoneFlowNode(z, true, markDirty)),
+    ...nodesFromDtos(conn.nodes),
+  ]);
+  // Connector nodes only (zones are nodes too, drawn behind them).
+  const connNodes = useMemo(() => nodes.filter(isConnector), [nodes]);
+
   const nodesRef = useRef(nodes);
   nodesRef.current = nodes;
   const wiresRef = useRef(wires);
@@ -139,8 +161,9 @@ function Editor({
   const stateRef = useRef({ name, description, lengthMm: connectionLength, placementIds });
   stateRef.current = { name, description, lengthMm: connectionLength, placementIds };
 
-  const edges = useMemo(() => buildEdges(nodes, wires, selectedWireId), [nodes, wires, selectedWireId]);
-  const nodeById = useMemo(() => new Map(nodes.map((n) => [n.id, n])), [nodes]);
+  const edges = useMemo(() => buildEdges(connNodes, wires, selectedWireId), [connNodes, wires, selectedWireId]);
+  const nodeById = useMemo(() => new Map(connNodes.map((n) => [n.id, n])), [connNodes]);
+  const carry = useZoneCarry(setNodes);
 
   // ----- Autosave (debounced, serialized) -----
   const pending = useRef(false);
@@ -155,7 +178,8 @@ function Editor({
           description: s.description,
           lengthMm: s.lengthMm,
           placementIds: s.placementIds,
-          nodes: nodesRef.current.map((n) => ({
+          zones: nodesRef.current.filter(isZone).map(zoneFromNode),
+          nodes: nodesRef.current.filter(isConnector).map((n) => ({
             id: n.id,
             pcbConnectorId: n.data.pcbConnectorId,
             projectPcbId: n.data.projectPcbId,
@@ -197,7 +221,7 @@ function Editor({
 
   // ----- Graph changes -----
   const onNodesChange = useCallback(
-    (changes: NodeChange<ConnFlowNode>[]) => {
+    (changes: NodeChange<EditorNode>[]) => {
       const removed = changes.filter((c) => c.type === 'remove').map((c) => c.id);
       onNodesChangeBase(changes);
       if (removed.length) {
@@ -236,8 +260,9 @@ function Editor({
         }
       }
       if (!color) {
-        const a = nodesRef.current.find((n) => n.id === fromNodeId)?.data.pins.find((p) => p.n === fromPin);
-        const b = nodesRef.current.find((n) => n.id === toNodeId)?.data.pins.find((p) => p.n === toPin);
+        const conns = nodesRef.current.filter(isConnector);
+        const a = conns.find((n) => n.id === fromNodeId)?.data.pins.find((p) => p.n === fromPin);
+        const b = conns.find((n) => n.id === toNodeId)?.data.pins.find((p) => p.n === toPin);
         color = a?.color || b?.color || '';
       }
       const wire: WireModel = {
@@ -301,13 +326,35 @@ function Editor({
     markDirty();
   }
 
-  function dropPosition() {
+  function viewCenter(dy = 1 / 2) {
     const el = flowWrap.current;
-    const offset = (nodesRef.current.length % 5) * 24;
-    if (!el) return { x: offset, y: offset };
+    if (!el) return { x: 0, y: 0 };
     const r = el.getBoundingClientRect();
-    const p = rf.screenToFlowPosition({ x: r.left + r.width / 2, y: r.top + r.height / 3 });
+    return rf.screenToFlowPosition({ x: r.left + r.width / 2, y: r.top + r.height * dy });
+  }
+
+  function dropPosition() {
+    const offset = (nodesRef.current.filter(isConnector).length % 5) * 24;
+    const p = viewCenter(1 / 3);
     return { x: p.x - 110 + offset, y: p.y + offset };
+  }
+
+  /** Adds a zone around the selected connectors, or in the middle of the view when none are selected. */
+  function addZone() {
+    const around = zoneAround(nodesRef.current.filter((n) => isConnector(n) && n.selected));
+    const c = viewCenter();
+    const rect = around ?? { x: c.x - 200, y: c.y - 150, w: 400, h: 300 };
+    const zone: ZoneShape = { id: uuid(), name: 'New zone', color: ZONE_COLOR, ...rect };
+    setNodes((ns) => [{ ...zoneFlowNode(zone, true, markDirty), selected: true }, ...ns.map((n) => ({ ...n, selected: false }))]);
+    setSelectedWireId(null);
+    markDirty();
+  }
+
+  function updateZone(nodeId: string, patch: Partial<ZoneShape>) {
+    setNodes((ns) =>
+      ns.map((n) => (n.id === nodeId && isZone(n) ? { ...n, data: { ...n.data, zone: { ...n.data.zone, ...patch } } } : n)),
+    );
+    markDirty();
   }
 
   function addPcbConnector(c: ProjectConnector) {
@@ -339,7 +386,7 @@ function Editor({
   /** Sets the chosen components; connectors of removed components leave the diagram (after confirming). */
   function changeComponents(ids: string[]) {
     const keep = new Set(ids);
-    const dropped = nodesRef.current.filter((n) => n.data.projectPcbId && !keep.has(n.data.projectPcbId));
+    const dropped = nodesRef.current.filter(isConnector).filter((n) => n.data.projectPcbId && !keep.has(n.data.projectPcbId));
     if (dropped.length) {
       const names = [...new Set(dropped.map((n) => placementById.get(n.data.projectPcbId!)?.name ?? '?'))];
       const msg = `${dropped.length} connector(s) of ${names.join(', ')} are in this diagram.\nRemoving the component also removes them and their wires. Continue?`;
@@ -362,7 +409,7 @@ function Editor({
   }
 
   const used = new Set(
-    nodes.filter((n) => n.data.pcbConnectorId).map((n) => availableKey(n.data.projectPcbId, n.data.pcbConnectorId)),
+    connNodes.filter((n) => n.data.pcbConnectorId).map((n) => availableKey(n.data.projectPcbId, n.data.pcbConnectorId)),
   );
   const chosen = new Set(placementIds);
   const included = placements.filter((p) => chosen.has(p.id));
@@ -386,7 +433,8 @@ function Editor({
   }
   const shownCount = [...byPlacement.values()].reduce((n, g) => n + g.shown.length, 0);
   const selectedWire = wires.find((w) => w.id === selectedWireId) ?? null;
-  const selectedNodes = nodes.filter((n) => n.selected);
+  const selectedNodes = connNodes.filter((n) => n.selected);
+  const selectedZones = nodes.filter((n): n is ZoneFlowNode => isZone(n) && !!n.selected);
 
   return (
     <div className="editor-page">
@@ -404,6 +452,13 @@ function Editor({
           aria-label="Connection name"
         />
         <SaveIndicator status={status} onRetry={save} />
+        <button
+          className="btn btn-sm"
+          onClick={addZone}
+          title="Group connectors by machine part, e.g. Frame, Printbed, Toolhead. With connectors selected, the zone is drawn around them."
+        >
+          + Zone
+        </button>
         <Link className="btn btn-sm" to={`/projects/${projectId}/connections/${conn.id}`}>
           View wiring diagram
         </Link>
@@ -415,18 +470,25 @@ function Editor({
           <ReactFlow
             nodes={nodes}
             edges={edges}
-            nodeTypes={nodeTypes}
+            nodeTypes={editorNodeTypes}
             edgeTypes={edgeTypes}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
             onReconnect={onReconnect}
             reconnectRadius={14}
-            onNodeDragStop={markDirty}
+            onNodeDragStart={carry.onNodeDragStart}
+            onNodeDrag={carry.onNodeDrag}
+            onNodeDragStop={(e, n, dragged) => {
+              carry.onNodeDragStop(e, n, dragged);
+              markDirty();
+            }}
             onEdgeClick={(_, e) => setSelectedWireId(e.id)}
             onPaneClick={() => setSelectedWireId(null)}
             connectionMode={ConnectionMode.Loose}
             deleteKeyCode={['Delete', 'Backspace']}
+            {...boxSelectProps}
+            elevateNodesOnSelect={false}
             fitView
             minZoom={0.1}
             proOptions={{ hideAttribution: true }}
@@ -434,7 +496,7 @@ function Editor({
             <Background gap={20} />
             <Controls />
           </ReactFlow>
-          {nodes.length === 0 && (
+          {connNodes.length === 0 && (
             <div className="flow-empty">Add connectors from the panel, then drag from a pin to a pin to draw a wire.</div>
           )}
         </div>
@@ -453,6 +515,14 @@ function Editor({
             />
           ) : (
             <>
+              {selectedZones.map((zn) => (
+                <ZonePanel
+                  key={zn.id}
+                  zone={zn.data.zone}
+                  onChange={(patch) => updateZone(zn.id, patch)}
+                  onRemove={() => onNodesChange([{ type: 'remove', id: zn.id }])}
+                />
+              ))}
               <div className="panel">
                 <h3>Connection</h3>
                 <div className="form">
@@ -496,7 +566,9 @@ function Editor({
                   <p className="small muted">
                     New wires take the next free core of this cable and its color. Drag from a pin to another pin to draw a
                     wire, or grab the end of a wire next to its pin and drop it on another pin to move it. Select a wire or
-                    connector and press Delete to remove it.
+                    connector and press Delete to remove it. Drag on empty space to select several connectors and move
+                    them together; pan with the right mouse button or by holding Space. Zones group connectors by machine
+                    part: drag a zone by its name to move it with everything inside.
                   </p>
                 </div>
               </div>
@@ -612,7 +684,7 @@ function Editor({
       )}
 
       <WireTable
-        nodes={nodes}
+        nodes={connNodes}
         wires={wires}
         cables={cables}
         connectionLength={connectionLength}
@@ -622,6 +694,36 @@ function Editor({
         onAdd={addWire}
         onRemove={removeWire}
       />
+    </div>
+  );
+}
+
+function ZonePanel({
+  zone,
+  onChange,
+  onRemove,
+}: {
+  zone: ZoneShape;
+  onChange: (patch: Partial<ZoneShape>) => void;
+  onRemove: () => void;
+}) {
+  return (
+    <div className="panel">
+      <h3>Zone</h3>
+      <div className="form">
+        <label>
+          Name
+          <input value={zone.name} onChange={(e) => onChange({ name: e.target.value })} placeholder="e.g. Toolhead" />
+        </label>
+        <label>
+          Color
+          <input type="color" value={zone.color} onChange={(e) => onChange({ color: e.target.value })} />
+        </label>
+        <p className="small muted">Drag the zone by its name to move it with the connectors inside. Drag a corner to resize it.</p>
+        <button className="btn btn-sm btn-danger" onClick={onRemove}>
+          Delete zone
+        </button>
+      </div>
     </div>
   );
 }

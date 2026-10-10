@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, errorMessage, imgUrl, type Folder, type Pcb, type Placement } from '../../api';
 import {
+  FolderField,
   FolderModal,
   FolderSection,
   FolderSelect,
@@ -25,8 +26,8 @@ export default function PcbsTab({ projectId }: { projectId: string }) {
     queryFn: () => api.get<Placement[]>(`/api/projects/${projectId}/pcbs`),
   });
   const [editing, setEditing] = useState<Placement | 'new' | null>(null);
-  // null = closed, true = open with nothing chosen, Pcb = open with that component chosen.
-  const [picking, setPicking] = useState<Pcb | true | null>(null);
+  // null = closed; pcb null = open with nothing chosen yet. folderId is the folder suggested for the new placement.
+  const [picking, setPicking] = useState<{ pcb: Pcb | null; folderId: string | null } | null>(null);
   const foldersQ = useFolders(projectId, 'components');
   const [folderForm, setFolderForm] = useState<Folder | 'new' | null>(null);
   const collapsed = useCollapsed();
@@ -110,7 +111,8 @@ export default function PcbsTab({ projectId }: { projectId: string }) {
         <button className="btn btn-sm" onClick={() => setEditing(p)}>
           Edit
         </button>
-        <button className="btn btn-sm" onClick={() => setPicking(p.pcb)} title="Add this component again under another name">
+        <button className="btn btn-sm" onClick={() => setPicking({ pcb: p.pcb, folderId: p.folderId })}
+          title="Add this component again under another name">
           Add another
         </button>
         <button className="btn btn-sm" onClick={() => detach(p)}>
@@ -138,7 +140,7 @@ export default function PcbsTab({ projectId }: { projectId: string }) {
           <button className="btn" onClick={() => setFolderForm('new')}>
             + New folder
           </button>
-          <button className="btn" onClick={() => setPicking(true)}>
+          <button className="btn" onClick={() => setPicking({ pcb: null, folderId: null })}>
             Add existing component
           </button>
           <button className="btn btn-primary" onClick={() => setEditing('new')}>
@@ -179,10 +181,11 @@ export default function PcbsTab({ projectId }: { projectId: string }) {
           pcb={editing === 'new' ? undefined : editing.pcb}
           placement={editing === 'new' ? undefined : editing}
           projectId={projectId}
+          folders={folders}
           onClose={() => setEditing(null)}
-          onUseExisting={(p) => {
+          onUseExisting={(p, folderId) => {
             setEditing(null);
-            setPicking(p);
+            setPicking({ pcb: p, folderId });
           }}
           onSaved={(p) => {
             const isNew = editing === 'new';
@@ -210,7 +213,9 @@ export default function PcbsTab({ projectId }: { projectId: string }) {
         <PlacePcbModal
           projectId={projectId}
           placements={q.data}
-          initial={picking === true ? null : picking}
+          folders={folders}
+          initial={picking.pcb}
+          initialFolderId={picking.folderId}
           onClose={() => setPicking(null)}
           onPlaced={refresh}
         />
@@ -223,13 +228,17 @@ export default function PcbsTab({ projectId }: { projectId: string }) {
 function PlacePcbModal({
   projectId,
   placements,
+  folders,
   initial,
+  initialFolderId,
   onClose,
   onPlaced,
 }: {
   projectId: string;
   placements: Placement[];
+  folders: Folder[];
   initial: Pcb | null;
+  initialFolderId: string | null;
   onClose: () => void;
   onPlaced: () => void;
 }) {
@@ -244,6 +253,7 @@ function PlacePcbModal({
   // Opens straight on the name step when a component was chosen before opening.
   const [chosen, setChosen] = useState<Pcb | null>(initial);
   const [name, setName] = useState(() => (initial ? suggestName(initial) : ''));
+  const [folderId, setFolderId] = useState(initialFolderId);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -265,7 +275,7 @@ function PlacePcbModal({
     setBusy(true);
     setError(null);
     try {
-      await api.post(`/api/projects/${projectId}/pcbs`, { pcbId: chosen.id, name: name.trim() });
+      await api.post(`/api/projects/${projectId}/pcbs`, { pcbId: chosen.id, name: name.trim(), folderId });
       onPlaced();
       onClose();
     } catch (err) {
@@ -303,6 +313,7 @@ function PlacePcbModal({
               Already in this project as: {existing.join(', ')}. You can rename those with Edit on their card.
             </p>
           )}
+          <FolderField folders={folders} value={folderId} onChange={setFolderId} />
           {taken && <p className="error small">"{taken.name}" is already used in this project.</p>}
           <ErrorText error={error} />
           <div className="form-actions">
