@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api, errorMessage, imgUrl, type Cable, type ConnectorType, type Folder, type Pcb, type Placement, type Project } from '../api';
 import { FolderField } from './folders';
@@ -71,6 +71,42 @@ export function ProjectForm({
 
 /** Case-insensitive name comparison used for duplicate checks. */
 export const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+
+/** Phones and tablets: offer the camera next to the file chooser. */
+const hasCamera = typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches;
+
+/**
+ * Picture picker. On a phone "Take photo" opens the rear camera directly (the `capture`
+ * attribute); "Choose file" opens the gallery or file browser.
+ */
+function PictureField({ label, file, onChange }: { label: string; file: File | null; onChange: (f: File) => void }) {
+  const camera = useRef<HTMLInputElement>(null);
+  const picker = useRef<HTMLInputElement>(null);
+  const pick = (e: ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (f) onChange(f);
+    // Reset so taking or choosing the same picture again still fires onChange.
+    e.target.value = '';
+  };
+  return (
+    <div className="field">
+      <span className="field-label">{label}</span>
+      <div className="btn-row">
+        {hasCamera && (
+          <button type="button" className="btn" onClick={() => camera.current?.click()}>
+            📷 Take photo
+          </button>
+        )}
+        <button type="button" className="btn" onClick={() => picker.current?.click()}>
+          {hasCamera ? 'Choose from gallery' : 'Choose file'}
+        </button>
+        {file && <span className="muted small">{file.name}</span>}
+      </div>
+      <input ref={camera} type="file" accept="image/*" capture="environment" onChange={pick} hidden />
+      <input ref={picker} type="file" accept="image/*" onChange={pick} hidden />
+    </div>
+  );
+}
 
 /**
  * Uploads a new library component, or edits one. With a projectId the form also sets the
@@ -188,18 +224,14 @@ export function PcbForm({
           Description
           <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3} />
         </label>
-        <label>
-          {pcb ? 'Replace picture (optional)' : 'Picture'}
-          <input
-            type="file"
-            accept="image/*"
-            onChange={(e) => {
-              const f = e.target.files?.[0] ?? null;
-              setFile(f);
-              if (f) setPreview(URL.createObjectURL(f));
-            }}
-          />
-        </label>
+        <PictureField
+          label={pcb ? 'Replace picture (optional)' : 'Picture'}
+          file={file}
+          onChange={(f) => {
+            setFile(f);
+            setPreview(URL.createObjectURL(f));
+          }}
+        />
         {pcb && file && (
           <p className="muted small">
             Drawn connectors keep their relative position. Use a picture with the same framing.
