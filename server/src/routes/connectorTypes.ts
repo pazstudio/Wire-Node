@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { prisma } from '../db.js';
+import { assertNotFrozen } from '../freeze.js';
 import { deleteFiles, readMultipart, saveImage } from '../storage.js';
 
 const Fields = z.object({
@@ -16,6 +17,7 @@ type P = { Params: { id: string } };
 export default async function connectorTypeRoutes(app: FastifyInstance) {
   app.get('/api/connector-types', async () =>
     prisma.connectorType.findMany({
+      where: { frozenInProjectId: null },
       orderBy: { name: 'asc' },
       include: { _count: { select: { instances: true } } },
     }),
@@ -33,6 +35,7 @@ export default async function connectorTypeRoutes(app: FastifyInstance) {
 
   app.put<P>('/api/connector-types/:id', async (req) => {
     const existing = await prisma.connectorType.findUniqueOrThrow({ where: { id: req.params.id } });
+    assertNotFrozen(existing);
     const { fields, file } = await readMultipart(req);
     const { removeImage, ...data } = Fields.parse(fields);
     const img = file ? await saveImage(file) : null;
@@ -49,6 +52,7 @@ export default async function connectorTypeRoutes(app: FastifyInstance) {
   });
 
   app.delete<P>('/api/connector-types/:id', async (req) => {
+    assertNotFrozen(await prisma.connectorType.findUniqueOrThrow({ where: { id: req.params.id } }));
     const type = await prisma.connectorType.delete({ where: { id: req.params.id } });
     await deleteFiles(type.imagePath, type.thumbPath);
     return { ok: true };

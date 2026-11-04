@@ -10,6 +10,7 @@ export default function ProjectsPage() {
   const navigate = useNavigate();
   const q = useQuery({ queryKey: ['projects'], queryFn: () => api.get<Project[]>('/api/projects') });
   const [editing, setEditing] = useState<Project | 'new' | null>(null);
+  const [duplicating, setDuplicating] = useState<Project | null>(null);
 
   async function remove(p: Project) {
     if (!confirm(`Delete project "${p.name}"? Its connections and map are deleted. Library components, cables and connectors are kept.`)) return;
@@ -36,7 +37,9 @@ export default function ProjectsPage() {
         {q.data.map((p) => (
           <div key={p.id} className="card">
             <Link to={`/projects/${p.id}`} className="card-main">
-              <h3>{p.name}</h3>
+              <h3>
+                {p.name} {p.lockedAt && <span className="badge badge-locked">🔒 Locked</span>}
+              </h3>
               {p.machine && <div className="muted">{p.machine}</div>}
               {p.description && <p className="small">{p.description}</p>}
               <div className="small muted">
@@ -47,9 +50,14 @@ export default function ProjectsPage() {
               <button className="btn btn-sm" onClick={() => setEditing(p)}>
                 Edit
               </button>
-              <button className="btn btn-sm btn-danger" onClick={() => remove(p)}>
-                Delete
+              <button className="btn btn-sm" onClick={() => setDuplicating(p)} title="Copy this project, e.g. to start a new revision">
+                Duplicate
               </button>
+              {!p.lockedAt && (
+                <button className="btn btn-sm btn-danger" onClick={() => remove(p)}>
+                  Delete
+                </button>
+              )}
             </div>
           </div>
         ))}
@@ -64,6 +72,18 @@ export default function ProjectsPage() {
             qc.invalidateQueries({ queryKey: ['projects'] });
             qc.invalidateQueries({ queryKey: ['project', p.id] });
             if (isNew) navigate(`/projects/${p.id}`);
+          }}
+        />
+      )}
+      {duplicating && (
+        <ProjectForm
+          duplicateOf={duplicating}
+          takenNames={q.data.map((p) => p.name)}
+          onClose={() => setDuplicating(null)}
+          onSaved={(p) => {
+            setDuplicating(null);
+            qc.invalidateQueries({ queryKey: ['projects'] });
+            navigate(`/projects/${p.id}`);
           }}
         />
       )}

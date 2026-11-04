@@ -20,6 +20,14 @@ and this project uses [Semantic Versioning](https://semver.org/).
   (project map, Edit mode) and move them together. Pan with the right or middle mouse button, or hold Space.
 - Choose a **folder** when uploading a component or adding an existing one. "Add another" suggests the folder
   of the card it was clicked on.
+- **Duplicate a project**, e.g. to start a new revision of a machine. The copy has the same components,
+  folders, map and connections (with their wires and zones). Library components, connectors and cables stay shared.
+- **Lock a project** (e.g. after the device shipped) with the button on the project page. A locked project keeps its
+  own frozen copy of every component (with its picture and connectors), connector type and cable it uses, so editing
+  or deleting them in the library no longer changes it. Nothing in a locked project can be changed, and it cannot be
+  deleted; renaming it is still possible. Duplicate it to start the next revision, which goes back to the library
+  items. Unlocking does the same. A component that was deleted from the library (or lost a connector that is wired)
+  is put back into the library instead, so no wiring is lost.
 - Opening a connector on a component shows the **connections it is used in** (in this project) as small
   diagrams, with the connector highlighted. Clicking a diagram opens that connection.
 
@@ -31,7 +39,7 @@ and this project uses [Semantic Versioning](https://semver.org/).
   connections. The confirmation lists the affected connections.
 - Duplicating a connector on a component continues its numbering ("V.out1" becomes "V.out2", "J3" the next free
   J number) instead of adding "copy". A name that ends in a number is numbered the same way.
-- Backup format v5 (folders, connection zones). Older v1–v4 backups still restore.
+- Backup format v6 (folders, connection zones, locked projects). Older v1–v5 backups still restore.
 - The connector form asks for **pins per row**. A connector with 5 pins in 2 rows now has 10 pins
   (it had 5 before), and the form shows the total.
 

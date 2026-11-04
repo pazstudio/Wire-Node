@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { prisma } from '../db.js';
 import { computeMapEdges } from '../mapEdges.js';
+import { assertUnlocked } from '../freeze.js';
 import { listPlacements } from './projects.js';
 
 const ZoneBody = z.object({
@@ -43,15 +44,20 @@ export default async function mapRoutes(app: FastifyInstance) {
   });
 
   app.post<P>('/api/projects/:id/zones', async (req, reply) => {
+    await assertUnlocked(req.params.id);
     const zone = await prisma.zone.create({ data: { ...ZoneBody.parse(req.body), projectId: req.params.id } });
     return reply.code(201).send(zone);
   });
 
-  app.put<P>('/api/zones/:id', async (req) =>
-    prisma.zone.update({ where: { id: req.params.id }, data: ZoneBody.partial().parse(req.body) }),
-  );
+  app.put<P>('/api/zones/:id', async (req) => {
+    const zone = await prisma.zone.findUniqueOrThrow({ where: { id: req.params.id } });
+    await assertUnlocked(zone.projectId);
+    return prisma.zone.update({ where: { id: zone.id }, data: ZoneBody.partial().parse(req.body) });
+  });
 
   app.delete<P>('/api/zones/:id', async (req) => {
+    const zone = await prisma.zone.findUnique({ where: { id: req.params.id } });
+    if (zone) await assertUnlocked(zone.projectId);
     await prisma.zone.deleteMany({ where: { id: req.params.id } });
     return { ok: true };
   });

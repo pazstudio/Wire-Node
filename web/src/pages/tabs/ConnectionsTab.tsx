@@ -17,7 +17,7 @@ import {
 import { PlacementPicker } from '../../components/placements';
 import { ErrorText, Loading, Modal } from '../../components/ui';
 
-export default function ConnectionsTab({ projectId }: { projectId: string }) {
+export default function ConnectionsTab({ projectId, locked }: { projectId: string; locked: boolean }) {
   const qc = useQueryClient();
   const navigate = useNavigate();
   const [params] = useSearchParams();
@@ -26,13 +26,13 @@ export default function ConnectionsTab({ projectId }: { projectId: string }) {
     queryFn: () => api.get<ConnectionSummary[]>(`/api/projects/${projectId}/connections`),
   });
   const foldersQ = useFolders(projectId, 'connections');
-  const [creating, setCreating] = useState(params.get('new') === '1');
+  const [creating, setCreating] = useState(params.get('new') === '1' && !locked);
   const [folderForm, setFolderForm] = useState<Folder | 'new' | null>(null);
   const collapsed = useCollapsed();
   const dnd = useFolderDnd('connections', (id, folderId) => {
     const c = q.data?.find((x) => x.id === id);
     if (c) moveTo(c, folderId);
-  });
+  }, !locked);
 
   async function remove(c: ConnectionSummary) {
     if (!confirm(`Delete connection "${c.name}" and its ${c.wireCount} wire(s)?`)) return;
@@ -111,26 +111,30 @@ export default function ConnectionsTab({ projectId }: { projectId: string }) {
               <td className="nowrap">{formatLength(c.lengthMm)}</td>
               <td>{c.wireCount}</td>
               <td className="right nowrap">
-                {folders.length > 0 && (
-                  <FolderSelect folders={folders} value={c.folderId} onChange={(f) => moveTo(c, f)} label={`Folder of ${c.name}`} />
-                )}{' '}
-                <Link
-                  className="btn btn-sm"
-                  to={`/projects/${projectId}/connections/${c.id}/edit`}
-                  onClick={(e) => e.stopPropagation()}
-                  draggable={false}
-                >
-                  Edit
-                </Link>{' '}
-                <button
-                  className="btn btn-sm btn-danger"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    remove(c);
-                  }}
-                >
-                  Delete
-                </button>
+                {!locked && (
+                  <>
+                    {folders.length > 0 && (
+                      <FolderSelect folders={folders} value={c.folderId} onChange={(f) => moveTo(c, f)} label={`Folder of ${c.name}`} />
+                    )}{' '}
+                    <Link
+                      className="btn btn-sm"
+                      to={`/projects/${projectId}/connections/${c.id}/edit`}
+                      onClick={(e) => e.stopPropagation()}
+                      draggable={false}
+                    >
+                      Edit
+                    </Link>{' '}
+                    <button
+                      className="btn btn-sm btn-danger"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        remove(c);
+                      }}
+                    >
+                      Delete
+                    </button>
+                  </>
+                )}
               </td>
             </tr>
           ))}
@@ -146,14 +150,16 @@ export default function ConnectionsTab({ projectId }: { projectId: string }) {
           A connection links connectors drawn on components. Add more than two connectors to build a harness with splits.
           Sort connections into folders: drag a row onto a folder.
         </p>
-        <div className="btn-row">
-          <button className="btn" onClick={() => setFolderForm('new')}>
-            + New folder
-          </button>
-          <button className="btn btn-primary" onClick={() => setCreating(true)}>
-            + New connection
-          </button>
-        </div>
+        {!locked && (
+          <div className="btn-row">
+            <button className="btn" onClick={() => setFolderForm('new')}>
+              + New folder
+            </button>
+            <button className="btn btn-primary" onClick={() => setCreating(true)}>
+              + New connection
+            </button>
+          </div>
+        )}
       </div>
       {connections.length === 0 && (
         <p className="empty">No connections yet. Draw connectors on at least one component first, then create a connection.</p>
@@ -172,6 +178,7 @@ export default function ConnectionsTab({ projectId }: { projectId: string }) {
             onToggle={() => collapsed.toggle(f.id)}
             onRename={() => setFolderForm(f)}
             onDelete={() => removeFolder(f, items.length)}
+            readOnly={locked}
             emptyText="Empty. Drag connections here, or choose this folder on a connection."
           >
             {table(items)}

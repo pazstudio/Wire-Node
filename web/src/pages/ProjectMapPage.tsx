@@ -203,14 +203,18 @@ function MapEditor({ projectId, data }: { projectId: string; data: MapData }) {
           <Link to={`/projects/${projectId}`}>{data.project.name}</Link> /
         </div>
         <h1 className="diagram-title">Project map</h1>
-        <div className="seg">
-          <button className={!edit ? 'active' : ''} onClick={() => setEdit(false)}>
-            View
-          </button>
-          <button className={edit ? 'active' : ''} onClick={() => setEdit(true)}>
-            Edit
-          </button>
-        </div>
+        {data.project.lockedAt ? (
+          <span className="badge badge-locked">🔒 Locked</span>
+        ) : (
+          <div className="seg">
+            <button className={!edit ? 'active' : ''} onClick={() => setEdit(false)}>
+              View
+            </button>
+            <button className={edit ? 'active' : ''} onClick={() => setEdit(true)}>
+              Edit
+            </button>
+          </div>
+        )}
         {edit && (
           <button className="btn btn-sm" onClick={addZone}>
             + Zone

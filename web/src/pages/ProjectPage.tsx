@@ -1,6 +1,5 @@
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
-import { api, type Project } from '../api';
+import { LockBanner, LockButton, useProject } from '../components/lock';
 import { Loading } from '../components/ui';
 import PcbsTab from './tabs/PcbsTab';
 import CablesTab from './tabs/CablesTab';
@@ -18,10 +17,11 @@ export default function ProjectPage() {
   const { pid } = useParams() as { pid: string };
   const [params, setParams] = useSearchParams();
   const tab = params.get('tab') ?? 'pcbs';
-  const q = useQuery({ queryKey: ['project', pid], queryFn: () => api.get<Project>(`/api/projects/${pid}`) });
+  const q = useProject(pid);
 
   if (!q.data) return <Loading error={q.error} />;
   const project = q.data;
+  const locked = !!project.lockedAt;
 
   return (
     <div className="page">
@@ -33,10 +33,14 @@ export default function ProjectPage() {
           <h1>{project.name}</h1>
           {project.machine && <div className="muted">{project.machine}</div>}
         </div>
-        <Link to={`/projects/${pid}/map`} className="btn btn-primary">
-          Project map
-        </Link>
+        <div className="btn-row">
+          <LockButton project={project} />
+          <Link to={`/projects/${pid}/map`} className="btn btn-primary">
+            Project map
+          </Link>
+        </div>
       </div>
+      <LockBanner project={project} />
       <nav className="tabs">
         {TABS.map((t) => (
           <button
@@ -48,10 +52,10 @@ export default function ProjectPage() {
           </button>
         ))}
       </nav>
-      {tab === 'pcbs' && <PcbsTab projectId={pid} />}
+      {tab === 'pcbs' && <PcbsTab projectId={pid} locked={locked} />}
       {tab === 'cables' && <CablesTab />}
       {tab === 'connectors' && <ConnectorsTab />}
-      {tab === 'connections' && <ConnectionsTab projectId={pid} />}
+      {tab === 'connections' && <ConnectionsTab projectId={pid} locked={locked} />}
     </div>
   );
 }

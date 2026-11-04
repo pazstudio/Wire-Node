@@ -5,6 +5,8 @@ export interface Project {
   name: string;
   machine: string;
   description: string;
+  /** Set while the project is locked (e.g. the device shipped); a locked project cannot be changed. */
+  lockedAt: string | null;
   createdAt: string;
   updatedAt: string;
   _count?: { pcbs: number; connections: number };
@@ -18,6 +20,8 @@ export interface Pcb {
   thumbPath: string;
   imageWidth: number;
   imageHeight: number;
+  /** Set on the frozen copy kept by a locked project; such a copy cannot be edited. */
+  frozenInProjectId?: string | null;
   _count?: { connectors: number };
   projects?: { project: { id: string; name: string } }[];
 }

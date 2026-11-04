@@ -23,13 +23,15 @@ export function itemsIn<T extends { folderId: string | null }>(items: T[], folde
 /**
  * Drag and drop of items (component cards, connection rows) between folders.
  * `itemProps(id)` goes on each draggable item, `zoneProps(folderId)` on each folder.
+ * With `enabled` false (a locked project) nothing can be dragged.
  */
-export function useFolderDnd(kind: FolderKind, onDrop: (itemId: string, folderId: string | null) => void) {
+export function useFolderDnd(kind: FolderKind, onDrop: (itemId: string, folderId: string | null) => void, enabled = true) {
   const type = `application/x-wire-node-${kind}`;
   const [dragging, setDragging] = useState<string | null>(null);
   const [over, setOver] = useState<string | null>(null);
 
   function itemProps(id: string) {
+    if (!enabled) return {};
     return {
       draggable: true,
       onDragStart: (e: DragEvent) => {
@@ -46,6 +48,7 @@ export function useFolderDnd(kind: FolderKind, onDrop: (itemId: string, folderId
 
   function zoneProps(folderId: string | null) {
     const key = folderId ?? NO_FOLDER;
+    if (!enabled) return {};
     return {
       onDragOver: (e: DragEvent) => {
         if (!e.dataTransfer.types.includes(type)) return;
@@ -80,6 +83,7 @@ export function FolderSection({
   onToggle,
   onRename,
   onDelete,
+  readOnly,
   emptyText,
   children,
 }: {
@@ -91,6 +95,8 @@ export function FolderSection({
   onToggle: () => void;
   onRename: () => void;
   onDelete: () => void;
+  /** Hides Rename and Delete (a locked project). */
+  readOnly?: boolean;
   emptyText: string;
   children: ReactNode;
 }) {
@@ -103,12 +109,16 @@ export function FolderSection({
           <span className="folder-name">{folder.name}</span>
           <span className="small muted">{count}</span>
         </button>
-        <button className="btn btn-sm" onClick={onRename}>
-          Rename
-        </button>
-        <button className="btn btn-sm btn-danger" onClick={onDelete}>
-          Delete
-        </button>
+        {!readOnly && (
+          <>
+            <button className="btn btn-sm" onClick={onRename}>
+              Rename
+            </button>
+            <button className="btn btn-sm btn-danger" onClick={onDelete}>
+              Delete
+            </button>
+          </>
+        )}
       </div>
       {open && (count ? children : <p className="folder-empty">{emptyText}</p>)}
     </div>

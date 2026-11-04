@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, Navigate, useParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Background,
@@ -37,6 +37,7 @@ import {
   pinLabel,
   type ConnFlowNode,
 } from '../components/flow';
+import { useProject } from '../components/lock';
 import { PlacementPicker } from '../components/placements';
 import {
   boxSelectProps,
@@ -77,9 +78,14 @@ export default function ConnectionEditorPage() {
   });
   const typesQ = useQuery({ queryKey: ['connectorTypes'], queryFn: () => api.get<ConnectorType[]>('/api/connector-types') });
   const cablesQ = useQuery({ queryKey: ['cables'], queryFn: () => api.get<Cable[]>('/api/cables') });
+  const projectQ = useProject(pid);
 
-  if (!connQ.data || !availQ.data || !placementsQ.data || !typesQ.data || !cablesQ.data)
-    return <Loading error={connQ.error || availQ.error || placementsQ.error || typesQ.error || cablesQ.error} />;
+  if (!connQ.data || !availQ.data || !placementsQ.data || !typesQ.data || !cablesQ.data || !projectQ.data)
+    return (
+      <Loading error={connQ.error || availQ.error || placementsQ.error || typesQ.error || cablesQ.error || projectQ.error} />
+    );
+  // A locked project's connections can only be viewed.
+  if (projectQ.data.lockedAt) return <Navigate to={`/projects/${pid}/connections/${cid}`} replace />;
 
   return (
     <ReactFlowProvider>

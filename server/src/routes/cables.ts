@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { prisma } from '../db.js';
+import { assertNotFrozen } from '../freeze.js';
 
 const CableBody = z.object({
   name: z.string().trim().min(1, 'Name is required'),
@@ -23,7 +24,7 @@ function normalize(body: unknown) {
 
 export default async function cableRoutes(app: FastifyInstance) {
   app.get('/api/cables', async () =>
-    prisma.cable.findMany({ orderBy: { name: 'asc' }, include: { _count: { select: { wires: true } } } }),
+    prisma.cable.findMany({ where: { frozenInProjectId: null }, orderBy: { name: 'asc' }, include: { _count: { select: { wires: true } } } }),
   );
 
   app.post('/api/cables', async (req, reply) => {
@@ -31,11 +32,13 @@ export default async function cableRoutes(app: FastifyInstance) {
     return reply.code(201).send(cable);
   });
 
-  app.put<P>('/api/cables/:id', async (req) =>
-    prisma.cable.update({ where: { id: req.params.id }, data: normalize(req.body) }),
-  );
+  app.put<P>('/api/cables/:id', async (req) => {
+    assertNotFrozen(await prisma.cable.findUniqueOrThrow({ where: { id: req.params.id } }));
+    return prisma.cable.update({ where: { id: req.params.id }, data: normalize(req.body) });
+  });
 
   app.delete<P>('/api/cables/:id', async (req) => {
+    assertNotFrozen(await prisma.cable.findUniqueOrThrow({ where: { id: req.params.id } }));
     await prisma.cable.delete({ where: { id: req.params.id } });
     return { ok: true };
   });

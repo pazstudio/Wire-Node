@@ -9,16 +9,22 @@ datasource db {
 
 /// A machine project. PCBs are placed in projects; connections and zones belong to one project.
 model Project {
-  id          String       @id @default(uuid())
-  name        String
-  machine     String       @default("")
-  description String       @default("")
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-  pcbs        ProjectPcb[]
-  folders     Folder[]
-  connections Connection[]
-  zones       Zone[]
+  id           String          @id @default(uuid())
+  name         String
+  machine      String          @default("")
+  description  String          @default("")
+  /// Set when the project is locked (e.g. the device shipped). A locked project cannot be changed
+  /// and uses its own frozen copies of library components, connector types and cables.
+  lockedAt     DateTime?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  pcbs         ProjectPcb[]
+  folders      Folder[]
+  connections  Connection[]
+  zones        Zone[]
+  frozenPcbs   Pcb[]
+  frozenTypes  ConnectorType[]
+  frozenCables Cable[]
 }
 
 /// Folder on a project tab: groups placed components (e.g. "Toolhead") or connections.
@@ -40,16 +46,23 @@ model Folder {
 
 /// Library PCB (shared between projects). Image is stored on the uploads volume.
 model Pcb {
-  id          String         @id @default(uuid())
-  name        String
-  description String         @default("")
-  imagePath   String
-  thumbPath   String
-  imageWidth  Int
-  imageHeight Int
-  createdAt   DateTime       @default(now())
-  projects    ProjectPcb[]
-  connectors  PcbConnector[]
+  id                String         @id @default(uuid())
+  name              String
+  description       String         @default("")
+  imagePath         String
+  thumbPath         String
+  imageWidth        Int
+  imageHeight       Int
+  /// Set on a frozen copy kept by a locked project; null = in the library.
+  frozenInProjectId String?
+  /// Library item the frozen copy was made from (may have been deleted since).
+  sourceId          String?
+  createdAt         DateTime       @default(now())
+  frozenIn          Project?       @relation(fields: [frozenInProjectId], references: [id], onDelete: Cascade)
+  projects          ProjectPcb[]
+  connectors        PcbConnector[]
+
+  @@index([frozenInProjectId])
 }
 
 /// A library component placed in a project. The same component can be placed several times
@@ -76,16 +89,21 @@ model ProjectPcb {
 
 /// Library connector part (e.g. "JST-XH 4P").
 model ConnectorType {
-  id        String           @id @default(uuid())
-  name      String
-  pinCount  Int
-  rowCount  Int              @default(1)
-  crimpName String           @default("")
-  imagePath String?
-  thumbPath String?
-  createdAt DateTime         @default(now())
-  instances PcbConnector[]
-  nodes     ConnectionNode[]
+  id                String           @id @default(uuid())
+  name              String
+  pinCount          Int
+  rowCount          Int              @default(1)
+  crimpName         String           @default("")
+  imagePath         String?
+  thumbPath         String?
+  /// Set on a frozen copy kept by a locked project; null = in the library.
+  frozenInProjectId String?
+  /// Library item the frozen copy was made from (may have been deleted since).
+  sourceId          String?
+  createdAt         DateTime         @default(now())
+  frozenIn          Project?         @relation(fields: [frozenInProjectId], references: [id], onDelete: Cascade)
+  instances         PcbConnector[]
+  nodes             ConnectionNode[]
 }
 
 /// A connector drawn as a rectangle on a PCB photo.
@@ -105,6 +123,8 @@ model PcbConnector {
   h               Float
   rotation        Float            @default(0)
   pins            Json             @default("[]")
+  /// On a frozen copy: the library connector it was copied from.
+  sourceId        String?
   updatedAt       DateTime         @updatedAt
   pcb             Pcb              @relation(fields: [pcbId], references: [id], onDelete: Cascade)
   connectorType   ConnectorType?   @relation(fields: [connectorTypeId], references: [id], onDelete: SetNull)
@@ -113,41 +133,46 @@ model PcbConnector {
 
 /// Library cable. cores: [{ color: string }]
 model Cable {
-  id          String   @id @default(uuid())
-  name        String
-  description String   @default("")
-  coreCount   Int
-  cores       Json     @default("[]")
-  shielded    Boolean  @default(false)
-  gauge       String   @default("")
-  lengthMm    Float?
-  createdAt   DateTime @default(now())
-  wires       Wire[]
+  id                String   @id @default(uuid())
+  name              String
+  description       String   @default("")
+  coreCount         Int
+  cores             Json     @default("[]")
+  shielded          Boolean  @default(false)
+  gauge             String   @default("")
+  lengthMm          Float?
+  /// Set on a frozen copy kept by a locked project; null = in the library.
+  frozenInProjectId String?
+  /// Library item the frozen copy was made from (may have been deleted since).
+  sourceId          String?
+  createdAt         DateTime @default(now())
+  frozenIn          Project? @relation(fields: [frozenInProjectId], references: [id], onDelete: Cascade)
+  wires             Wire[]
 }
 
 /// A connection (direct or harness) inside a project: a graph of connector nodes and pin-to-pin wires.
 model Connection {
-  id          String           @id @default(uuid())
-  projectId   String
-  name        String
-  description String           @default("")
-  kind        String           @default("direct")
+  id           String           @id @default(uuid())
+  projectId    String
+  name         String
+  description  String           @default("")
+  kind         String           @default("direct")
   /// Cable length of the whole connection in mm. Wires can override it (harness branches).
-  lengthMm    Float?
+  lengthMm     Float?
   /// Components (ProjectPcb ids) chosen for this connection; the editor lists only their connectors.
   /// Placements that already have connectors in the diagram count as chosen even if missing here.
-  placementIds String[]        @default([])
+  placementIds String[]         @default([])
   /// Zones drawn in the diagram to group connectors by machine part (e.g. "Frame", "Toolhead").
   /// [{ id, name, color, x, y, w, h }]
-  zones       Json             @default("[]")
+  zones        Json             @default("[]")
   /// Folder on the Connections tab; null = not in a folder.
-  folderId    String?
-  createdAt   DateTime         @default(now())
-  updatedAt   DateTime         @updatedAt
-  project     Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  folder      Folder?          @relation(fields: [folderId], references: [id], onDelete: SetNull)
-  nodes       ConnectionNode[]
-  wires       Wire[]
+  folderId     String?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+  project      Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  folder       Folder?          @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  nodes        ConnectionNode[]
+  wires        Wire[]
 }
 
 /// A connector placed in a connection diagram. Either references a connector drawn

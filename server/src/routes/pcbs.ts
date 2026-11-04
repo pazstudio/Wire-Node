@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { prisma } from '../db.js';
+import { assertNotFrozen, assertUnlocked } from '../freeze.js';
 import { deleteFiles, readMultipart, saveImage } from '../storage.js';
 import { assertComponentFolder, assertPlacementNameFree, PlacementNameField, placePcb } from './projects.js';
 
@@ -33,7 +34,7 @@ type P = { Params: { id: string } };
 /** Library names are unique, so the same part is not uploaded twice under different names. */
 async function assertLibraryNameFree(name: string, exceptId?: string) {
   const other = await prisma.pcb.findFirst({
-    where: { name: { equals: name, mode: 'insensitive' }, ...(exceptId ? { NOT: { id: exceptId } } : {}) },
+    where: { frozenInProjectId: null, name: { equals: name, mode: 'insensitive' }, ...(exceptId ? { NOT: { id: exceptId } } : {}) },
   });
   if (other) {
     throw Object.assign(
@@ -46,6 +47,7 @@ async function assertLibraryNameFree(name: string, exceptId?: string) {
 export default async function pcbRoutes(app: FastifyInstance) {
   app.get('/api/pcbs', async () =>
     prisma.pcb.findMany({
+      where: { frozenInProjectId: null },
       orderBy: { name: 'asc' },
       include: {
         _count: { select: { connectors: true } },
@@ -62,7 +64,7 @@ export default async function pcbRoutes(app: FastifyInstance) {
     // Check names before storing anything, so a rejected upload leaves nothing behind.
     await assertLibraryNameFree(meta.name);
     if (fields.projectId) {
-      await prisma.project.findUniqueOrThrow({ where: { id: fields.projectId } });
+      await assertUnlocked(fields.projectId);
       await assertPlacementNameFree(fields.projectId, placementName || meta.name);
       await assertComponentFolder(fields.projectId, fields.folderId);
     }
@@ -93,6 +95,7 @@ export default async function pcbRoutes(app: FastifyInstance) {
 
   app.put<P>('/api/pcbs/:id', async (req) => {
     const existing = await prisma.pcb.findUniqueOrThrow({ where: { id: req.params.id } });
+    assertNotFrozen(existing);
     const { fields, file } = await readMultipart(req);
     const meta = PcbFields.parse(fields);
     await assertLibraryNameFree(meta.name, existing.id);
@@ -112,6 +115,7 @@ export default async function pcbRoutes(app: FastifyInstance) {
   });
 
   app.delete<P>('/api/pcbs/:id', async (req) => {
+    assertNotFrozen(await prisma.pcb.findUniqueOrThrow({ where: { id: req.params.id } }));
     const pcb = await prisma.pcb.delete({ where: { id: req.params.id } });
     await deleteFiles(pcb.imagePath, pcb.thumbPath);
     return { ok: true };
@@ -137,6 +141,9 @@ export default async function pcbRoutes(app: FastifyInstance) {
   // ----- Connectors drawn on a PCB (autosaved by the editor via idempotent upsert) -----
   app.put<P>('/api/pcb-connectors/:id', async (req) => {
     const b = ConnectorBody.parse(req.body);
+    const existing = await prisma.pcbConnector.findUnique({ where: { id: req.params.id }, include: { pcb: true } });
+    if (existing) assertNotFrozen(existing.pcb);
+    assertNotFrozen(await prisma.pcb.findUniqueOrThrow({ where: { id: b.pcbId } }));
     const data = { ...b, connectorTypeId: b.connectorTypeId ?? null };
     return prisma.pcbConnector.upsert({
       where: { id: req.params.id },
@@ -147,6 +154,8 @@ export default async function pcbRoutes(app: FastifyInstance) {
   });
 
   app.delete<P>('/api/pcb-connectors/:id', async (req) => {
+    const existing = await prisma.pcbConnector.findUnique({ where: { id: req.params.id }, include: { pcb: true } });
+    if (existing) assertNotFrozen(existing.pcb);
     await prisma.pcbConnector.deleteMany({ where: { id: req.params.id } });
     return { ok: true };
   });
@@ -155,7 +164,8 @@ export default async function pcbRoutes(app: FastifyInstance) {
   app.get('/api/pin-names', async () =>
     prisma.$queryRaw<{ name: string; count: number }[]>`
       SELECT btrim(p->>'name') AS name, count(*)::int AS count
-      FROM "PcbConnector" c, jsonb_array_elements(CASE WHEN jsonb_typeof(c.pins) = 'array' THEN c.pins ELSE '[]'::jsonb END) p
+      FROM "PcbConnector" c JOIN "Pcb" b ON b.id = c."pcbId" AND b."frozenInProjectId" IS NULL,
+        jsonb_array_elements(CASE WHEN jsonb_typeof(c.pins) = 'array' THEN c.pins ELSE '[]'::jsonb END) p
       WHERE btrim(coalesce(p->>'name', '')) <> ''
       GROUP BY 1
       ORDER BY 2 DESC, 1

@@ -213,7 +213,9 @@ function PcbEditor({ pcb, projectId, types }: { pcb: PcbDetail; projectId: strin
   const rectsRef = useRef(rects);
   rectsRef.current = rects;
 
-  const [mode, setMode] = useState<'view' | 'edit'>(params.get('edit') === '1' ? 'edit' : 'view');
+  // The frozen copy kept by a locked project can only be viewed.
+  const frozen = !!pcb.frozenInProjectId;
+  const [mode, setMode] = useState<'view' | 'edit'>(params.get('edit') === '1' && !frozen ? 'edit' : 'view');
   const [tool, setTool] = useState<'draw' | 'pan'>('draw');
   // ?connector=<id> opens that connector (e.g. from the preview in a connection diagram).
   const linkedId = pcb.connectors.some((c) => c.id === params.get('connector')) ? params.get('connector') : null;
@@ -472,14 +474,20 @@ function PcbEditor({ pcb, projectId, types }: { pcb: PcbDetail; projectId: strin
           <Link to={`/projects/${projectId}`}>Project</Link> / <strong>{pcb.name}</strong>
         </div>
         <div className="btn-row">
-          <div className="seg">
-            <button className={mode === 'view' ? 'active' : ''} onClick={() => setMode('view')}>
-              View
-            </button>
-            <button className={mode === 'edit' ? 'active' : ''} onClick={() => setMode('edit')}>
-              Edit
-            </button>
-          </div>
+          {frozen ? (
+            <span className="badge badge-locked" title="This project is locked, so its components cannot be changed">
+              🔒 Locked
+            </span>
+          ) : (
+            <div className="seg">
+              <button className={mode === 'view' ? 'active' : ''} onClick={() => setMode('view')}>
+                View
+              </button>
+              <button className={mode === 'edit' ? 'active' : ''} onClick={() => setMode('edit')}>
+                Edit
+              </button>
+            </div>
+          )}
           {mode === 'edit' && (
             <div className="seg">
               <button className={tool === 'draw' ? 'active' : ''} onClick={() => setTool('draw')} title="Drag on the photo to draw a connector">
@@ -500,9 +508,11 @@ function PcbEditor({ pcb, projectId, types }: { pcb: PcbDetail; projectId: strin
             </button>
           </div>
           <SaveIndicator status={saver.status} onRetry={saver.retry} />
-          <Link className="btn btn-sm" to={`/projects/${projectId}?tab=connections&new=1`}>
-            New connection
-          </Link>
+          {!frozen && (
+            <Link className="btn btn-sm" to={`/projects/${projectId}?tab=connections&new=1`}>
+              New connection
+            </Link>
+          )}
         </div>
       </div>
       {mode === 'edit' && (

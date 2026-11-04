@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { prisma } from '../db.js';
+import { assertUnlocked } from '../freeze.js';
 import { folderInProject } from './projects.js';
 
 /** Board fields the diagram needs to show a picture of where a connector is. */
@@ -155,6 +156,7 @@ export default async function connectionRoutes(app: FastifyInstance) {
 
   app.post<P>('/api/projects/:id/connections', async (req, reply) => {
     const data = CreateBody.parse(req.body);
+    await assertUnlocked(req.params.id);
     if (data.folderId && !(await folderInProject(data.folderId, req.params.id, 'connections'))) {
       return reply.code(400).send({ message: 'That folder is not in this project' });
     }
@@ -176,6 +178,7 @@ export default async function connectionRoutes(app: FastifyInstance) {
       }
     }
     const conn = await prisma.connection.findUniqueOrThrow({ where: { id } });
+    await assertUnlocked(conn.projectId);
     const problem = await checkPlacements(conn.projectId, b.nodes);
     if (problem) return reply.code(400).send({ message: problem });
     const placementIds = b.placementIds ? await projectPlacementIds(conn.projectId, b.placementIds) : undefined;
@@ -219,6 +222,7 @@ export default async function connectionRoutes(app: FastifyInstance) {
   app.patch<P>('/api/connections/:id', async (req, reply) => {
     const { folderId } = z.object({ folderId: z.string().nullable() }).parse(req.body);
     const conn = await prisma.connection.findUniqueOrThrow({ where: { id: req.params.id } });
+    await assertUnlocked(conn.projectId);
     if (folderId && !(await folderInProject(folderId, conn.projectId, 'connections'))) {
       return reply.code(400).send({ message: 'That folder is not in this project' });
     }
@@ -227,6 +231,7 @@ export default async function connectionRoutes(app: FastifyInstance) {
   });
 
   app.delete<P>('/api/connections/:id', async (req) => {
+    await assertUnlocked((await prisma.connection.findUniqueOrThrow({ where: { id: req.params.id } })).projectId);
     await prisma.connection.delete({ where: { id: req.params.id } });
     return { ok: true };
   });

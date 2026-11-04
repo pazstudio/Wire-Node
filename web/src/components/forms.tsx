@@ -1,6 +1,6 @@
 import { useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { api, errorMessage, imgUrl, type Cable, type ConnectorType, type Folder, type Pcb, type Placement, type Project } from '../api';
+import { api, errorMessage, imgUrl, nextNumberedName, type Cable, type ConnectorType, type Folder, type Pcb, type Placement, type Project } from '../api';
 import { FolderField } from './folders';
 import { ColorPicker, ErrorText, Modal } from './ui';
 
@@ -8,16 +8,25 @@ import { ColorPicker, ErrorText, Modal } from './ui';
 
 export function ProjectForm({
   project,
+  duplicateOf,
+  takenNames = [],
   onClose,
   onSaved,
 }: {
   project?: Project;
+  /** Creates a copy of this project instead (e.g. a new revision of the machine). */
+  duplicateOf?: Project;
+  takenNames?: string[];
   onClose: () => void;
   onSaved: (p: Project) => void;
 }) {
-  const [name, setName] = useState(project?.name ?? '');
-  const [machine, setMachine] = useState(project?.machine ?? '');
-  const [description, setDescription] = useState(project?.description ?? '');
+  const [name, setName] = useState(() => {
+    if (!duplicateOf) return project?.name ?? '';
+    const n = duplicateOf.name.trim();
+    return nextNumberedName(/\d$/.test(n) ? n : `${n} - Rev 1`, takenNames);
+  });
+  const [machine, setMachine] = useState((duplicateOf ?? project)?.machine ?? '');
+  const [description, setDescription] = useState((duplicateOf ?? project)?.description ?? '');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -27,9 +36,11 @@ export function ProjectForm({
     setError(null);
     try {
       const body = { name, machine, description };
-      const saved = project
-        ? await api.put<Project>(`/api/projects/${project.id}`, body)
-        : await api.post<Project>('/api/projects', body);
+      const saved = duplicateOf
+        ? await api.post<Project>(`/api/projects/${duplicateOf.id}/duplicate`, body)
+        : project
+          ? await api.put<Project>(`/api/projects/${project.id}`, body)
+          : await api.post<Project>('/api/projects', body);
       onSaved(saved);
     } catch (err) {
       setError(errorMessage(err));
@@ -39,8 +50,14 @@ export function ProjectForm({
   }
 
   return (
-    <Modal title={project ? 'Edit project' : 'New project'} onClose={onClose}>
+    <Modal title={duplicateOf ? `Duplicate "${duplicateOf.name}"` : project ? 'Edit project' : 'New project'} onClose={onClose}>
       <form onSubmit={submit} className="form">
+        {duplicateOf && (
+          <p className="small muted">
+            The copy gets the same components, folders, map and connections. Components, connectors and cables stay
+            shared with the library, so editing one of them changes both projects.
+          </p>
+        )}
         <label>
           Name
           <input value={name} onChange={(e) => setName(e.target.value)} required autoFocus />

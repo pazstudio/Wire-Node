@@ -367,6 +367,22 @@ h3 {
   background: #fef3c7;
   color: #92400e;
 }
+.badge-locked {
+  background: #fee2e2;
+  color: #991b1b;
+}
+.lock-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  font-size: 0.9rem;
+  color: #7f1d1d;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: var(--radius);
+}
 .add-row td {
   background: #f8fafc;
 }

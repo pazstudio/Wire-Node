@@ -21,7 +21,9 @@ const FORMAT = 'wire-node-backup';
 // v3: componentFolders, and projectPcbs record folderId.
 // v4: componentFolders is now folders (with a kind); connections record folderId.
 // v5: connections record zones.
-const VERSION = 5;
+// v6: projects record lockedAt; pcbs, connectorTypes and cables record frozenInProjectId and sourceId
+//     (frozen copies kept by locked projects); pcbConnectors record sourceId.
+const VERSION = 6;
 const MAX_RESTORE_BYTES = 20 * 1024 ** 3; // 20 GB
 
 const TABLES = [

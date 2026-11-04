@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Background, ConnectionMode, Controls, ReactFlow, ReactFlowProvider, useNodesState } from '@xyflow/react';
 import { api, formatLength, type Connection } from '../api';
 import { buildEdges, edgeTypes, nodesFromDtos, nodeTypes, pinLabel, type ConnFlowNode } from '../components/flow';
+import { useLocked } from '../components/lock';
 import { Loading, Swatch } from '../components/ui';
 import { zoneFlowNode, ZoneNode, type ZoneFlowNode } from '../components/zones';
 import { colorLabel } from '../colors';
@@ -27,6 +28,7 @@ export default function WiringDiagramPage() {
 }
 
 function Diagram({ projectId, conn }: { projectId: string; conn: Connection }) {
+  const locked = useLocked(projectId);
   // Read-only nodes get pointer-events: none from React Flow; keep them hoverable for the picture preview.
   const [nodes, , onNodesChange] = useNodesState<ConnFlowNode | ZoneFlowNode>([
     ...(conn.zones ?? []).map((z) => zoneFlowNode(z, false)),
@@ -45,9 +47,13 @@ function Diagram({ projectId, conn }: { projectId: string; conn: Connection }) {
         <h1 className="diagram-title">{conn.name}</h1>
         <span className={`badge ${conn.kind === 'harness' ? 'badge-harness' : ''}`}>{conn.kind}</span>
         <div className="btn-row no-print">
-          <Link className="btn btn-sm btn-primary" to={`/projects/${projectId}/connections/${conn.id}/edit`}>
-            Edit
-          </Link>
+          {locked ? (
+            <span className="badge badge-locked">🔒 Locked</span>
+          ) : (
+            <Link className="btn btn-sm btn-primary" to={`/projects/${projectId}/connections/${conn.id}/edit`}>
+              Edit
+            </Link>
+          )}
           <button className="btn btn-sm" onClick={() => window.print()}>
             Print / PDF
           </button>

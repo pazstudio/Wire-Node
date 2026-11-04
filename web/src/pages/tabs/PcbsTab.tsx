@@ -18,7 +18,7 @@ import {
 import { PcbForm, sameName } from '../../components/forms';
 import { ErrorText, Loading, Modal } from '../../components/ui';
 
-export default function PcbsTab({ projectId }: { projectId: string }) {
+export default function PcbsTab({ projectId, locked }: { projectId: string; locked: boolean }) {
   const qc = useQueryClient();
   const navigate = useNavigate();
   const q = useQuery({
@@ -34,7 +34,7 @@ export default function PcbsTab({ projectId }: { projectId: string }) {
   const dnd = useFolderDnd('components', (id, folderId) => {
     const p = q.data?.find((x) => x.id === id);
     if (p) moveTo(p, folderId);
-  });
+  }, !locked);
 
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ['projectPcbs', projectId] });
@@ -107,24 +107,26 @@ export default function PcbsTab({ projectId }: { projectId: string }) {
         {p.pcb.description && <p className="small">{p.pcb.description}</p>}
         <div className="small muted">{p.pcb._count?.connectors ?? 0} connectors drawn</div>
       </Link>
-      <div className="card-actions">
-        <button className="btn btn-sm" onClick={() => setEditing(p)}>
-          Edit
-        </button>
-        <button className="btn btn-sm" onClick={() => setPicking({ pcb: p.pcb, folderId: p.folderId })}
-          title="Add this component again under another name">
-          Add another
-        </button>
-        <button className="btn btn-sm" onClick={() => detach(p)}>
-          Remove from project
-        </button>
-        <button className="btn btn-sm btn-danger" onClick={() => destroy(p.pcb)}>
-          Delete
-        </button>
-        {folders.length > 0 && (
-          <FolderSelect folders={folders} value={p.folderId} onChange={(f) => moveTo(p, f)} label={`Folder of ${p.name}`} />
-        )}
-      </div>
+      {!locked && (
+        <div className="card-actions">
+          <button className="btn btn-sm" onClick={() => setEditing(p)}>
+            Edit
+          </button>
+          <button className="btn btn-sm" onClick={() => setPicking({ pcb: p.pcb, folderId: p.folderId })}
+            title="Add this component again under another name">
+            Add another
+          </button>
+          <button className="btn btn-sm" onClick={() => detach(p)}>
+            Remove from project
+          </button>
+          <button className="btn btn-sm btn-danger" onClick={() => destroy(p.pcb)}>
+            Delete
+          </button>
+          {folders.length > 0 && (
+            <FolderSelect folders={folders} value={p.folderId} onChange={(f) => moveTo(p, f)} label={`Folder of ${p.name}`} />
+          )}
+        </div>
+      )}
     </div>
   );
 
@@ -136,17 +138,19 @@ export default function PcbsTab({ projectId }: { projectId: string }) {
           under different names, e.g. "Main board - Master" and "Main board - Slave". Sort them into folders by machine
           part: drag a card onto a folder.
         </p>
-        <div className="btn-row">
-          <button className="btn" onClick={() => setFolderForm('new')}>
-            + New folder
-          </button>
-          <button className="btn" onClick={() => setPicking({ pcb: null, folderId: null })}>
-            Add existing component
-          </button>
-          <button className="btn btn-primary" onClick={() => setEditing('new')}>
-            + Upload component
-          </button>
-        </div>
+        {!locked && (
+          <div className="btn-row">
+            <button className="btn" onClick={() => setFolderForm('new')}>
+              + New folder
+            </button>
+            <button className="btn" onClick={() => setPicking({ pcb: null, folderId: null })}>
+              Add existing component
+            </button>
+            <button className="btn btn-primary" onClick={() => setEditing('new')}>
+              + Upload component
+            </button>
+          </div>
+        )}
       </div>
       {placements.length === 0 && <p className="empty">No components in this project yet. Upload a picture of a PCB, motor or power supply to start.</p>}
 
@@ -163,6 +167,7 @@ export default function PcbsTab({ projectId }: { projectId: string }) {
             onToggle={() => collapsed.toggle(f.id)}
             onRename={() => setFolderForm(f)}
             onDelete={() => removeFolder(f, items.length)}
+            readOnly={locked}
             emptyText="Empty. Drag components here, or choose this folder on a component card."
           >
             <div className="card-grid">{items.map(card)}</div>

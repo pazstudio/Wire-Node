@@ -70,3 +70,15 @@ export async function readMultipart(req: FastifyRequest) {
   }
   return { fields, file };
 }
+
+/** Copies an uploaded file under a new name (for frozen copies). A missing file keeps its old name. */
+export async function copyUpload(name: string | null): Promise<string | null> {
+  if (!name) return null;
+  const copy = `${randomUUID()}${path.extname(name)}`;
+  try {
+    await fs.promises.copyFile(path.join(UPLOAD_DIR, path.basename(name)), path.join(UPLOAD_DIR, copy));
+    return copy;
+  } catch {
+    return name;
+  }
+}
