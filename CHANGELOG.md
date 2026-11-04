@@ -40,6 +40,8 @@ and this project uses [Semantic Versioning](https://semver.org/).
 
 - Component names in the library must be unique (ignoring case). Uploading a component whose name is
   already in the library is refused and offers to place the existing one instead.
+- **Deleting a component** from the library (and so from every project) asks you to type
+  `permanentlydeletefromallprojects` first. The server refuses the delete without it.
 - Removing a component from a project now also removes its connectors and their wires from that project's
   connections. The confirmation lists the affected connections.
 - Duplicating a connector on a component continues its numbering ("V.out1" becomes "V.out2", "J3" the next free

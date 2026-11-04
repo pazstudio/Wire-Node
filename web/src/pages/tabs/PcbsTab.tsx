@@ -30,6 +30,7 @@ export default function PcbsTab({ projectId, locked }: { projectId: string; lock
   const [picking, setPicking] = useState<{ pcb: Pcb | null; folderId: string | null } | null>(null);
   const foldersQ = useFolders(projectId, 'components');
   const [folderForm, setFolderForm] = useState<Folder | 'new' | null>(null);
+  const [deleting, setDeleting] = useState<Pcb | null>(null);
   const collapsed = useCollapsed();
   const dnd = useFolderDnd('components', (id, folderId) => {
     const p = q.data?.find((x) => x.id === id);
@@ -52,21 +53,6 @@ export default function PcbsTab({ projectId, locked }: { projectId: string; lock
         lines.push(`Its connectors and their wires will be removed from: ${usage.connections.map((x) => x.name).join(', ')}`);
       if (!confirm(lines.join('\n\n'))) return;
       await api.del(`/api/project-pcbs/${p.id}`);
-      refresh();
-    } catch (e) {
-      alert(errorMessage(e));
-    }
-  }
-
-  async function destroy(p: Pcb) {
-    try {
-      const usage = await api.get<{ projects: { name: string }[]; connections: { name: string }[] }>(`/api/pcbs/${p.id}/usage`);
-      const lines = [`Permanently delete component "${p.name}", its picture and all connectors drawn on it?`];
-      if (usage.projects.length) lines.push(`Used in projects: ${usage.projects.map((x) => x.name).join(', ')}`);
-      if (usage.connections.length)
-        lines.push(`Wires in these connections will be removed: ${usage.connections.map((x) => x.name).join(', ')}`);
-      if (!confirm(lines.join('\n\n'))) return;
-      await api.del(`/api/pcbs/${p.id}`);
       refresh();
     } catch (e) {
       alert(errorMessage(e));
@@ -119,7 +105,7 @@ export default function PcbsTab({ projectId, locked }: { projectId: string; lock
           <button className="btn btn-sm" onClick={() => detach(p)}>
             Remove from project
           </button>
-          <button className="btn btn-sm btn-danger" onClick={() => destroy(p.pcb)}>
+          <button className="btn btn-sm btn-danger" onClick={() => setDeleting(p.pcb)}>
             Delete
           </button>
           {folders.length > 0 && (
@@ -214,6 +200,16 @@ export default function PcbsTab({ projectId, locked }: { projectId: string; lock
           }}
         />
       )}
+      {deleting && (
+        <DeletePcbModal
+          pcb={deleting}
+          onClose={() => setDeleting(null)}
+          onDeleted={() => {
+            setDeleting(null);
+            refresh();
+          }}
+        />
+      )}
       {picking && (
         <PlacePcbModal
           projectId={projectId}
@@ -226,6 +222,78 @@ export default function PcbsTab({ projectId, locked }: { projectId: string; lock
         />
       )}
     </section>
+  );
+}
+
+/** Typed so a component is never deleted from the library (and every project) by a stray click. */
+const DELETE_PHRASE = 'permanentlydeletefromallprojects';
+
+/** Deletes a component from the library; the user has to type DELETE_PHRASE first. */
+function DeletePcbModal({ pcb, onClose, onDeleted }: { pcb: Pcb; onClose: () => void; onDeleted: () => void }) {
+  const usageQ = useQuery({
+    queryKey: ['pcbUsage', pcb.id],
+    queryFn: () => api.get<{ projects: { name: string }[]; connections: { name: string }[] }>(`/api/pcbs/${pcb.id}/usage`),
+    gcTime: 0,
+  });
+  const [typed, setTyped] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const confirmed = typed.trim() === DELETE_PHRASE;
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    if (!confirmed) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api.del(`/api/pcbs/${pcb.id}?confirm=${DELETE_PHRASE}`);
+      onDeleted();
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const usage = usageQ.data;
+  return (
+    <Modal title={`Delete "${pcb.name}" permanently`} onClose={onClose}>
+      <form onSubmit={submit} className="form">
+        <p>
+          This deletes the component, its picture and all connectors drawn on it from the library and from{' '}
+          <strong>every project</strong>. It cannot be undone. To take it out of this project only, use{' '}
+          <strong>Remove from project</strong> instead.
+        </p>
+        {!usage && <Loading error={usageQ.error} />}
+        {usage && usage.projects.length > 0 && (
+          <p className="small">Used in projects: {usage.projects.map((x) => x.name).join(', ')}</p>
+        )}
+        {usage && usage.connections.length > 0 && (
+          <p className="small">
+            Wires in these connections will be removed: {usage.connections.map((x) => x.name).join(', ')}
+          </p>
+        )}
+        <label>
+          Type <code>{DELETE_PHRASE}</code> to confirm
+          <input
+            value={typed}
+            onChange={(e) => setTyped(e.target.value)}
+            autoFocus
+            autoComplete="off"
+            spellCheck={false}
+          />
+        </label>
+        <ErrorText error={error} />
+        <div className="form-actions">
+          <button type="button" className="btn" onClick={onClose}>
+            Cancel
+          </button>
+          <button type="submit" className="btn btn-danger" disabled={!confirmed || busy || !usage}>
+            {busy ? 'Deleting…' : 'Delete permanently'}
+          </button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 

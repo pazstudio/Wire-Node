@@ -114,7 +114,12 @@ export default async function pcbRoutes(app: FastifyInstance) {
     return pcb;
   });
 
-  app.delete<P>('/api/pcbs/:id', async (req) => {
+  // Deletes the component from the library and every project. The client must send the phrase the
+  // user typed, so a stray request cannot do it by accident.
+  app.delete<P & { Querystring: { confirm?: string } }>('/api/pcbs/:id', async (req, reply) => {
+    if (req.query.confirm !== 'permanentlydeletefromallprojects') {
+      return reply.code(400).send({ message: 'Type "permanentlydeletefromallprojects" to delete a component from all projects' });
+    }
     assertNotFrozen(await prisma.pcb.findUniqueOrThrow({ where: { id: req.params.id } }));
     const pcb = await prisma.pcb.delete({ where: { id: req.params.id } });
     await deleteFiles(pcb.imagePath, pcb.thumbPath);
