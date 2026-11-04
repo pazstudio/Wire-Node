@@ -8,6 +8,11 @@ and this project uses [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Wiring summary** of a project: a readable Markdown file with every component, connector and pin, what each
+  pin is wired to (followed through inline connectors and splices), the free connectors, and each connection
+  wire by wire. Download it with **Wiring summary** on the project page, e.g. to give to an AI assistant for
+  writing firmware config or G-code, or asking where a new part can be plugged in. Backups also contain one
+  per project, in the `wiring` folder.
 - **The same component can be placed in a project more than once**, each time under its own name, such
   as "Main board - Master" and "Main board - Slave". Connections, the connection editor and the project map
   keep the placements apart. "Add existing component" lists the whole library, and each card has

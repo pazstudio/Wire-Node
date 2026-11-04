@@ -35,6 +35,14 @@ export default function ProjectPage() {
         </div>
         <div className="btn-row">
           <LockButton project={project} />
+          <a
+            className="btn"
+            href={`/api/projects/${pid}/wiring.md`}
+            download
+            title="Download a readable Markdown summary of every connector, pin and wire, e.g. to give to an AI assistant"
+          >
+            Wiring summary
+          </a>
           <Link to={`/projects/${pid}/map`} className="btn btn-primary">
             Project map
           </Link>

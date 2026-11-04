@@ -100,10 +100,15 @@ export default function BackupPage() {
             {info.connections} connections.
           </p>
         )}
+        <p className="small muted">
+          The backup also has a readable wiring summary of each project in the <code>wiring</code> folder. To get one
+          project's summary on its own, use <strong>Wiring summary</strong> on the project page.
+        </p>
         <a className="btn btn-primary" href="/api/backup" download>
           Download backup
         </a>
       </div>
+
 
       <div className="panel">
         <h3>Restore from backup</h3>

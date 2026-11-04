@@ -9,10 +9,12 @@ import { z } from 'zod';
 import { Prisma } from '@prisma/client';
 import { linkLegacyNodes, prisma } from '../db.js';
 import { UPLOAD_DIR } from '../storage.js';
+import { buildWiringReport } from '../wiringReport.js';
 
 /**
  * Backup format (.tar.gz):
  *   wire-node.json      all database rows, see BackupFile
+ *   wiring/<project>.md readable wiring summary of each project (see wiringReport.ts); ignored by restore
  *   uploads/<file>      every picture referenced by a PCB or connector type
  */
 const FORMAT = 'wire-node-backup';
@@ -110,6 +112,19 @@ function referencedFiles(rows: Rows): string[] {
   return [...names];
 }
 
+/** File name for a project's wiring summary, e.g. "RC4 prototype" -> "rc4-prototype-wiring.md". */
+function wiringFileName(projectName: unknown, n?: number) {
+  const slug =
+    String(projectName ?? '')
+      .normalize('NFKD')
+      .replace(/[̀-ͯ]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 80) || 'project';
+  return `${slug}${n ? `-${n}` : ''}-wiring.md`;
+}
+
 function isAllowedEntry(p: string, entry: { type?: string }) {
   const norm = p.replace(/\\/g, '/').replace(/^\.\//, '');
   if (entry.type !== 'File' && entry.type !== 'Directory') return false; // no links/devices
@@ -145,15 +160,23 @@ export default async function backupRoutes(app: FastifyInstance) {
       archive.abort();
     });
 
+    const exportedAt = new Date().toISOString();
     const manifest = {
       format: FORMAT,
       version: VERSION,
-      exportedAt: new Date().toISOString(),
+      exportedAt,
       counts: counts(rows),
       missingFiles,
       data: rows,
     };
     archive.append(JSON.stringify(manifest), { name: 'wire-node.json' });
+    const usedNames = new Set<string>();
+    for (const p of rows.projects) {
+      let name = wiringFileName(p.name);
+      for (let i = 2; usedNames.has(name.toLowerCase()); i++) name = wiringFileName(p.name, i);
+      usedNames.add(name.toLowerCase());
+      archive.append(buildWiringReport(rows, p.id as string, exportedAt)!, { name: `wiring/${name}` });
+    }
     for (const f of present) archive.file(path.join(UPLOAD_DIR, f), { name: `uploads/${f}` });
     void archive.finalize();
 
@@ -162,6 +185,19 @@ export default async function backupRoutes(app: FastifyInstance) {
       .header('Content-Type', 'application/gzip')
       .header('Content-Disposition', `attachment; filename="wire-node-backup-${stamp}.tar.gz"`);
     return reply.send(archive);
+  });
+
+  // Readable wiring summary of one project, e.g. to give to an AI assistant.
+  app.get<{ Params: { id: string } }>('/api/projects/:id/wiring.md', async (req, reply) => {
+    const rows = await readAll();
+    const md = buildWiringReport(rows, req.params.id);
+    if (md === null) return reply.code(404).send({ message: 'Not found' });
+    const name = rows.projects.find((p) => p.id === req.params.id)!.name;
+    const file = wiringFileName(name);
+    reply
+      .header('Content-Type', 'text/markdown; charset=utf-8')
+      .header('Content-Disposition', `attachment; filename="${file}"`);
+    return md;
   });
 
   // ---------- Restore ----------
