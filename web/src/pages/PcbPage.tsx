@@ -17,6 +17,7 @@ import {
   type PcbDetail,
 } from '../api';
 import { AutocompleteInput, usePinNameSuggestions } from '../components/autocomplete';
+import { ConnectorConnections } from '../components/connectorConnections';
 import { ConnectorTypeForm } from '../components/forms';
 import { ColorPicker, Loading, SaveIndicator, Swatch } from '../components/ui';
 import { colorLabel } from '../colors';
@@ -627,6 +628,7 @@ function PcbEditor({ pcb, projectId, types }: { pcb: PcbDetail; projectId: strin
             mode === 'edit' ? (
               <ConnectorPanel
                 rect={panelRect}
+                projectId={projectId}
                 types={types}
                 pinNames={pinNames}
                 onChange={(patch) => updateRect(panelRect.id, patch)}
@@ -636,7 +638,7 @@ function PcbEditor({ pcb, projectId, types }: { pcb: PcbDetail; projectId: strin
                 onDuplicate={() => duplicateRect(panelRect.id)}
               />
             ) : (
-              <ConnectorInfo rect={panelRect} types={types} onClose={() => setPanelId(null)} />
+              <ConnectorInfo rect={panelRect} projectId={projectId} types={types} onClose={() => setPanelId(null)} />
             )
           ) : (
             <div className="panel">
@@ -683,6 +685,7 @@ function PcbEditor({ pcb, projectId, types }: { pcb: PcbDetail; projectId: strin
 
 function ConnectorPanel({
   rect,
+  projectId,
   types,
   pinNames,
   onChange,
@@ -692,6 +695,7 @@ function ConnectorPanel({
   onDuplicate,
 }: {
   rect: PcbConnector;
+  projectId: string;
   types: ConnectorType[];
   pinNames: string[];
   onChange: (patch: Partial<PcbConnector>) => void;
@@ -810,11 +814,22 @@ function ConnectorPanel({
         </button>
       </div>
       <p className="small muted">Changes are saved automatically.</p>
+      <ConnectorConnections connectorId={rect.id} projectId={projectId} />
     </div>
   );
 }
 
-function ConnectorInfo({ rect, types, onClose }: { rect: PcbConnector; types: ConnectorType[]; onClose: () => void }) {
+function ConnectorInfo({
+  rect,
+  projectId,
+  types,
+  onClose,
+}: {
+  rect: PcbConnector;
+  projectId: string;
+  types: ConnectorType[];
+  onClose: () => void;
+}) {
   const type = types.find((t) => t.id === rect.connectorTypeId) ?? null;
   const pins = resizePins(rect.pins, type ? type.pinCount : rect.pins.length);
   return (
@@ -834,6 +849,7 @@ function ConnectorInfo({ rect, types, onClose }: { rect: PcbConnector; types: Co
         <p className="small muted">No connector type set.</p>
       )}
       {type?.thumbPath && <img src={imgUrl(type.thumbPath)} alt="" className="info-img" />}
+      <ConnectorConnections connectorId={rect.id} projectId={projectId} />
       {pins.length > 0 && (
         <table className="table pin-table">
           <thead>

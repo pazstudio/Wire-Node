@@ -598,6 +598,45 @@ textarea:focus {
   max-height: 140px;
   border-radius: 6px;
 }
+.connector-conns {
+  margin: 12px 0;
+}
+.connector-conns h4 {
+  margin: 0 0 6px;
+}
+.mini-diagram {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 8px 8px;
+  margin-bottom: 10px;
+  cursor: pointer;
+}
+.mini-diagram:hover,
+.mini-diagram:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--primary);
+}
+.mini-diagram-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.mini-diagram-flow {
+  height: 200px;
+  border-radius: 6px;
+  background: #f8fafc;
+}
+/* The whole card is the link: the diagram inside only shows. */
+.mini-diagram-flow .react-flow {
+  pointer-events: none;
+}
+.mini-diagram-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
 .save-ind {
   font-size: 0.85rem;
   white-space: nowrap;

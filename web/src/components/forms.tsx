@@ -264,8 +264,10 @@ export function ConnectorTypeForm({
   onSaved: (t: ConnectorType) => void;
 }) {
   const [name, setName] = useState(type?.name ?? '');
-  const [pinCount, setPinCount] = useState(type?.pinCount ?? 2);
+  // The form asks for pins per row; the stored pinCount is the total over all rows.
+  const [pinsPerRow, setPinsPerRow] = useState(type ? Math.ceil(type.pinCount / Math.max(1, type.rowCount)) : 2);
   const [rowCount, setRowCount] = useState(type?.rowCount ?? 1);
+  const pinCount = pinsPerRow * rowCount;
   const [crimpName, setCrimpName] = useState(type?.crimpName ?? '');
   const [file, setFile] = useState<File | null>(null);
   const [removeImage, setRemoveImage] = useState(false);
@@ -305,14 +307,22 @@ export function ConnectorTypeForm({
         </label>
         <div className="form-row">
           <label>
-            Number of pins
-            <input type="number" min={1} max={500} value={pinCount} onChange={(e) => setPinCount(+e.target.value)} required />
+            Pins per row
+            <input
+              type="number"
+              min={1}
+              max={Math.floor(500 / Math.max(1, rowCount))}
+              value={pinsPerRow}
+              onChange={(e) => setPinsPerRow(+e.target.value)}
+              required
+            />
           </label>
           <label>
             Number of rows
             <input type="number" min={1} max={20} value={rowCount} onChange={(e) => setRowCount(+e.target.value)} required />
           </label>
         </div>
+        <p className="muted small">Total: {pinCount} pins</p>
         <label>
           Crimp name (optional)
           <input value={crimpName} onChange={(e) => setCrimpName(e.target.value)} placeholder="e.g. SXH-001T-P0.6" />

@@ -162,10 +162,13 @@ export default async function pcbRoutes(app: FastifyInstance) {
       LIMIT 5000`,
   );
 
-  app.get<P>('/api/pcb-connectors/:id/usage', async (req) => {
+  // ?projectId= limits the list to one project (a component can be placed in several).
+  app.get<P & { Querystring: { projectId?: string } }>('/api/pcb-connectors/:id/usage', async (req) => {
+    const { projectId } = req.query;
     const connections = await prisma.connection.findMany({
-      where: { nodes: { some: { pcbConnectorId: req.params.id } } },
-      select: { id: true, name: true },
+      where: { nodes: { some: { pcbConnectorId: req.params.id } }, ...(projectId ? { projectId } : {}) },
+      select: { id: true, name: true, projectId: true },
+      orderBy: { name: 'asc' },
     });
     return { connections };
   });

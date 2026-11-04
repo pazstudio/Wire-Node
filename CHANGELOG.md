@@ -20,6 +20,8 @@ and this project uses [Semantic Versioning](https://semver.org/).
   (project map, Edit mode) and move them together. Pan with the right or middle mouse button, or hold Space.
 - Choose a **folder** when uploading a component or adding an existing one. "Add another" suggests the folder
   of the card it was clicked on.
+- Opening a connector on a component shows the **connections it is used in** (in this project) as small
+  diagrams, with the connector highlighted. Clicking a diagram opens that connection.
 
 ### Changed
 
@@ -30,6 +32,8 @@ and this project uses [Semantic Versioning](https://semver.org/).
 - Duplicating a connector on a component continues its numbering ("V.out1" becomes "V.out2", "J3" the next free
   J number) instead of adding "copy". A name that ends in a number is numbered the same way.
 - Backup format v5 (folders, connection zones). Older v1–v4 backups still restore.
+- The connector form asks for **pins per row**. A connector with 5 pins in 2 rows now has 10 pins
+  (it had 5 before), and the form shows the total.
 
 ### Upgrading
 
