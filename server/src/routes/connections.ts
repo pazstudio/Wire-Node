@@ -154,6 +154,11 @@ export default async function connectionRoutes(app: FastifyInstance) {
     }));
   });
 
+  // Every connection of the project with its full diagram, in one request (for the Search tab).
+  app.get<P>('/api/projects/:id/connections/full', async (req) =>
+    prisma.connection.findMany({ where: { projectId: req.params.id }, orderBy: { name: 'asc' }, include: fullInclude }),
+  );
+
   app.post<P>('/api/projects/:id/connections', async (req, reply) => {
     const data = CreateBody.parse(req.body);
     await assertUnlocked(req.params.id);

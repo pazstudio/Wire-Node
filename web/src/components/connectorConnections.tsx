@@ -1,7 +1,7 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQueries, useQuery } from '@tanstack/react-query';
-import { ReactFlow, useNodesState } from '@xyflow/react';
+import { ConnectionMode, ReactFlow, useNodesState } from '@xyflow/react';
 import { api, type Connection } from '../api';
 import { buildEdges, edgeTypes, nodesFromDtos, nodeTypes, type ConnFlowNode } from './flow';
 import { zoneFlowNode, ZoneNode, type ZoneFlowNode } from './zones';
@@ -45,7 +45,7 @@ export function ConnectorConnections({ connectorId, projectId }: { connectorId: 
       {used.map((c, i) => {
         const conn = connQs[i]?.data;
         return conn ? (
-          <MiniDiagram key={c.id} conn={conn} connectorId={connectorId} to={`/projects/${projectId}/connections/${c.id}`} />
+          <ConnectorUsage key={c.id} conn={conn} connectorId={connectorId} to={`/projects/${projectId}/connections/${c.id}`} />
         ) : (
           <div key={c.id} className="mini-diagram">
             <div className="mini-diagram-head">
@@ -61,18 +61,53 @@ export function ConnectorConnections({ connectorId, projectId }: { connectorId: 
   );
 }
 
-function MiniDiagram({ conn, connectorId, to }: { conn: Connection; connectorId: string; to: string }) {
+function ConnectorUsage({ conn, connectorId, to }: { conn: Connection; connectorId: string; to: string }) {
+  const { here, wiresHere } = useMemo(() => {
+    const here = new Set(conn.nodes.filter((n) => n.pcbConnectorId === connectorId).map((n) => n.id));
+    return { here, wiresHere: conn.wires.filter((w) => here.has(w.fromNodeId) || here.has(w.toNodeId)).length };
+  }, [conn, connectorId]);
+  return (
+    <MiniDiagram
+      conn={conn}
+      highlight={here}
+      to={to}
+      info={
+        <span className="small muted">
+          {wiresHere} wire{wiresHere === 1 ? '' : 's'} on this connector
+        </span>
+      }
+    />
+  );
+}
+
+/** A connection as a small read-only diagram with some connectors highlighted. Clicking it opens the connection. */
+export function MiniDiagram({
+  conn,
+  highlight,
+  to,
+  info,
+  children,
+}: {
+  conn: Connection;
+  /** Ids of the connection nodes to highlight. */
+  highlight: Set<string>;
+  to: string;
+  /** Shown next to the connection name. */
+  info?: ReactNode;
+  /** Shown under the heading, above the diagram. */
+  children?: ReactNode;
+}) {
   const navigate = useNavigate();
-  const [nodes, , onNodesChange] = useNodesState<ConnFlowNode | ZoneFlowNode>([
+  const [nodes, setNodes, onNodesChange] = useNodesState<ConnFlowNode | ZoneFlowNode>([
     ...(conn.zones ?? []).map((z) => zoneFlowNode(z, false)),
-    ...nodesFromDtos(conn.nodes).map((n) => ({ ...n, selected: n.data.pcbConnectorId === connectorId })),
+    ...nodesFromDtos(conn.nodes).map((n) => ({ ...n, selected: highlight.has(n.id) })),
   ]);
+  // The card stays mounted while a search changes which connectors match.
+  useEffect(() => {
+    setNodes((ns) => ns.map((n) => (isConnector(n) && n.selected !== highlight.has(n.id) ? { ...n, selected: highlight.has(n.id) } : n)));
+  }, [highlight, setNodes]);
   const connNodes = useMemo(() => nodes.filter(isConnector), [nodes]);
   const edges = useMemo(() => buildEdges(connNodes, conn.wires), [connNodes, conn.wires]);
-  const wiresHere = useMemo(() => {
-    const here = new Set(connNodes.filter((n) => n.data.pcbConnectorId === connectorId).map((n) => n.id));
-    return conn.wires.filter((w) => here.has(w.fromNodeId) || here.has(w.toNodeId)).length;
-  }, [connNodes, conn.wires, connectorId]);
 
   return (
     <div
@@ -87,10 +122,9 @@ function MiniDiagram({ conn, connectorId, to }: { conn: Connection; connectorId:
     >
       <div className="mini-diagram-head">
         <strong>{conn.name}</strong>
-        <span className="small muted">
-          {wiresHere} wire{wiresHere === 1 ? '' : 's'} on this connector
-        </span>
+        {info}
       </div>
+      {children}
       <div className="mini-diagram-flow">
         <ReactFlow
           nodes={nodes}
@@ -98,6 +132,8 @@ function MiniDiagram({ conn, connectorId, to }: { conn: Connection; connectorId:
           nodeTypes={previewNodeTypes}
           edgeTypes={edgeTypes}
           onNodesChange={onNodesChange}
+          // Every pin handle is a "source"; wires ending on one are only drawn in loose mode.
+          connectionMode={ConnectionMode.Loose}
           nodesDraggable={false}
           nodesConnectable={false}
           edgesReconnectable={false}

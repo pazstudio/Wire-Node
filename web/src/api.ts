@@ -163,6 +163,8 @@ export interface Connection {
   placementIds: string[];
   /** Zones drawn in the diagram (e.g. "Frame", "Toolhead"). */
   zones: ZoneShape[];
+  /** Folder on the Connections tab; null = not in a folder. */
+  folderId: string | null;
   nodes: ConnectionNodeDto[];
   wires: WireDto[];
 }

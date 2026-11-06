@@ -5,12 +5,14 @@ import PcbsTab from './tabs/PcbsTab';
 import CablesTab from './tabs/CablesTab';
 import ConnectorsTab from './tabs/ConnectorsTab';
 import ConnectionsTab from './tabs/ConnectionsTab';
+import SearchTab from './tabs/SearchTab';
 
 const TABS = [
   { key: 'pcbs', label: 'Components' },
   { key: 'cables', label: 'Cables' },
   { key: 'connectors', label: 'Connectors' },
   { key: 'connections', label: 'Connections' },
+  { key: 'search', label: 'Search' },
 ] as const;
 
 export default function ProjectPage() {
@@ -64,6 +66,7 @@ export default function ProjectPage() {
       {tab === 'cables' && <CablesTab />}
       {tab === 'connectors' && <ConnectorsTab />}
       {tab === 'connections' && <ConnectionsTab projectId={pid} locked={locked} />}
+      {tab === 'search' && <SearchTab projectId={pid} />}
     </div>
   );
 }

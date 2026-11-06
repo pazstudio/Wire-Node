@@ -648,6 +648,33 @@ textarea:focus {
 .mini-diagram-flow .react-flow {
   pointer-events: none;
 }
+.search-results {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 380px), 1fr));
+  gap: 12px;
+}
+.search-results .mini-diagram {
+  margin-bottom: 0;
+  display: flex;
+  flex-direction: column;
+}
+.search-results .mini-diagram-flow {
+  height: 240px;
+  margin-top: auto;
+}
+.search-hits {
+  margin: 0 0 6px;
+  padding-left: 18px;
+}
+.search-hits ul {
+  margin: 0;
+  padding-left: 16px;
+}
+.search-more {
+  display: flex;
+  justify-content: center;
+  margin-top: 12px;
+}
 .mini-diagram-loading {
   display: flex;
   align-items: center;

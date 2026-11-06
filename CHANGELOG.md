@@ -8,6 +8,10 @@ and this project uses [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Search tab** on the project page: find connections by component, connector, connector type, pin name, zone,
+  folder, wire color or note, e.g. "Motor", "1LC", "io1.in" or "io1.in master duet" (all words must match).
+  Results show as connection previews with the matching connectors highlighted and the matching pins listed
+  with where they are wired; connections where one connector matches every word come first.
 - **Wiring summary** of a project: a readable Markdown file with every component, connector and pin, what each
   pin is wired to (followed through inline connectors and splices), the free connectors, and each connection
   wire by wire. Download it with **Wiring summary** on the project page, e.g. to give to an AI assistant for
