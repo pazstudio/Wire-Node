@@ -927,6 +927,20 @@ textarea:focus {
   background: #e2e8f0;
   pointer-events: none;
 }
+/* Hovering a component or line on the project map fades what is not wired to it. */
+.react-flow__node.map-dim {
+  opacity: 0.25;
+  transition: opacity 0.12s;
+}
+.react-flow__node.map-lit .map-pcb {
+  border-color: #f97316;
+}
+.map-labels-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 8px;
+}
 .map-pcb-name {
   font-weight: 700;
   margin-top: 6px;

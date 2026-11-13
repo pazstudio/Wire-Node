@@ -208,6 +208,8 @@ export interface MapData {
   project: Project;
   placements: Placement[];
   zones: Zone[];
+  /** Folders on the Components tab ("Arrange by folders" makes a zone for each). */
+  folders: { id: string; name: string }[];
   edges: MapEdge[];
 }
 

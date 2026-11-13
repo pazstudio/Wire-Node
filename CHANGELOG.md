@@ -8,6 +8,14 @@ and this project uses [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Arrange by folders** on the project map (Edit mode): every folder on the Components tab becomes a zone
+  with its components laid out inside, most-wired components first. Folders that share wires are placed
+  next to each other, and components outside folders go below the zones. A zone already named after a folder
+  is reused with its color; other zones are moved to the right of the layout. Inside each zone, blocks are
+  swapped around to make the lines short, so a block wired to another zone sits on the side facing it.
+- **Easier to follow lines on the project map**: pointing at a component highlights its lines and the
+  components they lead to and fades the rest; pointing at a line highlights it and its two ends. Line labels
+  show for highlighted lines only, or for all lines with **All line labels**.
 - **Search tab** on the project page: find connections by component, connector, connector type, pin name, zone,
   folder, wire color or note, e.g. "Motor", "1LC", "io1.in" or "io1.in master duet" (all words must match).
   Results show as connection previews with the matching connectors highlighted and the matching pins listed

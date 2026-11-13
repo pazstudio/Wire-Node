@@ -53,6 +53,7 @@ const nodeTypes = { pcb: PcbNode, zone: ZoneNode };
 
 export default function ProjectMapPage() {
   const { pid } = useParams() as { pid: string };
+  const [edit, setEdit] = useState(false);
   const q = useQuery({
     queryKey: ['map', pid],
     queryFn: () => api.get<MapData>(`/api/projects/${pid}/map`),
@@ -62,18 +63,44 @@ export default function ProjectMapPage() {
   if (!q.data) return <Loading error={q.error} />;
   return (
     <ReactFlowProvider>
-      <MapEditor projectId={pid} data={q.data} />
+      {/* Rebuilt after "Arrange by folders" reloads the map; the View/Edit mode stays. */}
+      <MapEditor key={q.dataUpdatedAt} projectId={pid} data={q.data} edit={edit} setEdit={setEdit} reload={() => q.refetch()} />
     </ReactFlowProvider>
   );
 }
 
-function MapEditor({ projectId, data }: { projectId: string; data: MapData }) {
+type MapEditorProps = {
+  projectId: string;
+  data: MapData;
+  edit: boolean;
+  setEdit: (edit: boolean) => void;
+  reload: () => Promise<unknown>;
+};
+
+function MapEditor({ projectId, data, edit, setEdit, reload }: MapEditorProps) {
   const navigate = useNavigate();
   const rf = useReactFlow();
   const wrapRef = useRef<HTMLDivElement>(null);
-  const [edit, setEdit] = useState(false);
+  const [arranging, setArranging] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [picker, setPicker] = useState<{ edge: MapEdge; x: number; y: number } | null>(null);
+  /** Component or line under the mouse: its lines are highlighted and the rest of the map fades. */
+  const [hover, setHover] = useState<{ node: string } | { edge: string } | null>(null);
+  const [allLabels, setAllLabels] = useState(() => {
+    try {
+      return localStorage.getItem('map-all-labels') === '1';
+    } catch {
+      return false;
+    }
+  });
+  function toggleLabels(on: boolean) {
+    setAllLabels(on);
+    try {
+      localStorage.setItem('map-all-labels', on ? '1' : '0');
+    } catch {
+      /* not stored */
+    }
+  }
 
   const report = (e: unknown) => setError(`Could not save: ${errorMessage(e)}`);
 
@@ -84,13 +111,13 @@ function MapEditor({ projectId, data }: { projectId: string; data: MapData }) {
   const zoneNode = useCallback((z: Zone, editing: boolean) => zoneFlowNode(z, editing, onResized), [onResized]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState<MapNode>([
-    ...data.zones.map((z) => zoneNode(z, false)),
+    ...data.zones.map((z) => zoneNode(z, edit)),
     ...data.placements.map(
       (p): PcbFlowNode => ({
         id: p.id,
         type: 'pcb',
         position: { x: p.mapX, y: p.mapY },
-        draggable: false,
+        draggable: edit,
         data: { placement: p },
       }),
     ),
@@ -108,6 +135,16 @@ function MapEditor({ projectId, data }: { projectId: string; data: MapData }) {
     );
     setPicker(null);
   }, [edit, setNodes]);
+
+  // What the hover highlights: the lines and the components at both ends.
+  const lit = useMemo(() => {
+    if (!hover) return null;
+    const lines = data.edges.filter((e) => ('node' in hover ? e.source === hover.node || e.target === hover.node : e.id === hover.edge));
+    return {
+      lines: new Set(lines.map((e) => e.id)),
+      blocks: new Set([...lines.flatMap((e) => [e.source, e.target]), ...('node' in hover ? [hover.node] : [])]),
+    };
+  }, [hover, data.edges]);
 
   // Edges between component blocks; handle sides follow the relative block positions.
   const edges: Edge[] = useMemo(() => {
@@ -131,15 +168,20 @@ function MapEditor({ projectId, data }: { projectId: string; data: MapData }) {
           e.connections.length === 1
             ? `${e.connections[0].name} · ${e.wireCount} wire${e.wireCount === 1 ? '' : 's'}`
             : `${e.connections.length} connections · ${e.wireCount} wires`;
+        const on = lit?.lines.has(e.id) ?? false;
         return {
           id: e.id,
           source: e.source,
           target: e.target,
           sourceHandle: s,
           targetHandle: t,
-          label,
+          label: on || allLabels ? label : undefined,
           data: { edge: e },
-          style: { stroke: '#2563eb', strokeWidth: 3 },
+          // Highlighted lines are drawn on top of the others and of the blocks.
+          zIndex: on ? 1000 : 0,
+          style: on
+            ? { stroke: '#f97316', strokeWidth: 4 }
+            : { stroke: '#2563eb', strokeWidth: 2.5, opacity: lit ? 0.12 : 0.7 },
           labelStyle: { fontSize: 12, fontWeight: 600 },
           labelBgStyle: { fill: '#ffffff', fillOpacity: 0.9 },
           labelBgPadding: [6, 3] as [number, number],
@@ -147,7 +189,16 @@ function MapEditor({ projectId, data }: { projectId: string; data: MapData }) {
           selectable: false,
         };
       });
-  }, [nodes, data.edges]);
+  }, [nodes, data.edges, lit, allLabels]);
+
+  // Components not at the end of a highlighted line fade too.
+  const shownNodes = useMemo(
+    () =>
+      lit
+        ? nodes.map((n) => (n.type === 'pcb' ? { ...n, className: lit.blocks.has(n.id) ? 'map-lit' : 'map-dim' } : n))
+        : nodes,
+    [nodes, lit],
+  );
 
   function saveNodePosition(n: Node) {
     if (n.type === 'pcb') {
@@ -173,6 +224,34 @@ function MapEditor({ projectId, data }: { projectId: string; data: MapData }) {
       setNodes((ns) => [{ ...zoneNode(z, true), selected: true }, ...ns.map((n) => ({ ...n, selected: false }))]);
     } catch (e) {
       report(e);
+    }
+  }
+
+  async function arrangeByFolders() {
+    const used = new Set(data.placements.map((p) => p.folderId));
+    const folders = data.folders.filter((f) => used.has(f.id));
+    if (!folders.length) {
+      alert('No component is in a folder yet. Put components in folders on the Components tab of the project first.');
+      return;
+    }
+    const names = new Set(folders.map((f) => f.name.trim().toLowerCase()));
+    const other = data.zones.filter((z) => !names.has(z.name.trim().toLowerCase())).length;
+    const msg =
+      `Arrange the map by folders?
+
+Every component is moved: each of the ${folders.length} folder${folders.length === 1 ? '' : 's'} gets a zone ` +
+      'with its components inside (a zone with the folder name is reused), components outside folders go below.' +
+      (other ? `
+
+${other} zone${other === 1 ? '' : 's'} not named after a folder ${other === 1 ? 'is' : 'are'} moved to the right of the layout.` : '');
+    if (!confirm(msg)) return;
+    setArranging(true);
+    try {
+      await api.post(`/api/projects/${projectId}/map/arrange-by-folders`, {});
+      await reload();
+    } catch (e) {
+      report(e);
+      setArranging(false);
     }
   }
 
@@ -215,16 +294,29 @@ function MapEditor({ projectId, data }: { projectId: string; data: MapData }) {
             </button>
           </div>
         )}
+        <label className="small map-labels-toggle">
+          <input type="checkbox" checked={allLabels} onChange={(e) => toggleLabels(e.target.checked)} /> All line labels
+        </label>
         {edit && (
-          <button className="btn btn-sm" onClick={addZone}>
-            + Zone
-          </button>
+          <>
+            <button className="btn btn-sm" onClick={addZone}>
+              + Zone
+            </button>
+            <button
+              className="btn btn-sm"
+              onClick={arrangeByFolders}
+              disabled={arranging}
+              title="Make a zone for each folder on the Components tab and place its components inside"
+            >
+              {arranging ? 'Arranging…' : 'Arrange by folders'}
+            </button>
+          </>
         )}
       </div>
       <p className="hint">
         {edit
-          ? 'Drag component blocks to organize them; drag on empty space to select several and move them together (pan with the right mouse button or by holding Space). Add zones to group parts of the machine: drag a zone by its name to move it with everything inside, select it to rename, recolor or resize it.'
-          : 'Click a component to open it. Click a line to open the connection with its cable and pin details.'}
+          ? 'Drag component blocks to organize them; drag on empty space to select several and move them together (pan with the right mouse button or by holding Space). Add zones to group parts of the machine, or let "Arrange by folders" make one per component folder: drag a zone by its name to move it with everything inside, select it to rename, recolor or resize it.'
+          : 'Point at a component to highlight its lines and what they lead to; point at a line to see which connection it is. Click a component to open it, or a line to open the connection with its cable and pin details.'}
       </p>
       {error && (
         <p className="error">
@@ -238,11 +330,10 @@ function MapEditor({ projectId, data }: { projectId: string; data: MapData }) {
       <div className="editor-layout">
         <div className="flow-wrap map-wrap" ref={wrapRef}>
           <ReactFlow
-            nodes={nodes}
+            nodes={shownNodes}
             edges={edges}
             nodeTypes={nodeTypes}
             onNodesChange={onNodesChange}
-            onNodeDragStart={carry.onNodeDragStart}
             onNodeDrag={carry.onNodeDrag}
             onNodeDragStop={(e, n, dragged) => [...dragged, ...carry.onNodeDragStop(e, n, dragged)].forEach(saveNodePosition)}
             onNodeClick={(_e, n) => {
@@ -258,6 +349,14 @@ function MapEditor({ projectId, data }: { projectId: string; data: MapData }) {
               setPicker({ edge: me, x: e.clientX - r.left, y: e.clientY - r.top });
             }}
             onPaneClick={() => setPicker(null)}
+            onNodeMouseEnter={(_e, n) => n.type === 'pcb' && setHover({ node: n.id })}
+            onNodeMouseLeave={() => setHover(null)}
+            onEdgeMouseEnter={(_e, ed) => setHover({ edge: ed.id })}
+            onEdgeMouseLeave={() => setHover(null)}
+            onNodeDragStart={(e, n, dragged) => {
+              setHover(null);
+              carry.onNodeDragStart(e, n, dragged);
+            }}
             nodesConnectable={false}
             elevateNodesOnSelect={false}
             connectionMode={ConnectionMode.Loose}
