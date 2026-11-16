@@ -60,6 +60,8 @@ const WireSchema = z.object({
   coreIndex: z.number().int().min(0).nullable().optional(),
   color: z.string().default(''),
   lengthMm: LengthMm,
+  gauge: z.string().max(50).default(''),
+  shielded: z.boolean().nullable().optional(),
   note: z.string().default(''),
 });
 
@@ -222,6 +224,7 @@ export default async function connectionRoutes(app: FastifyInstance) {
           cableId: w.cableId ?? null,
           coreIndex: w.coreIndex ?? null,
           lengthMm: w.lengthMm ?? null,
+          shielded: w.shielded ?? null,
           connectionId: id,
         })),
       }),

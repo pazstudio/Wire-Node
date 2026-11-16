@@ -147,6 +147,10 @@ export interface WireModel {
   color: string;
   /** null = same as the connection length. */
   lengthMm: number | null;
+  /** Empty = the cable's gauge. */
+  gauge: string;
+  /** null = same as the cable. */
+  shielded: boolean | null;
   note: string;
 }
 

@@ -161,7 +161,7 @@ function Editor({
   useRecordVisit(projectId, { kind: 'connection', id: conn.id, name: conn.name });
 
   const [wires, setWires] = useState<WireModel[]>(() =>
-    conn.wires.map(({ id, fromNodeId, fromPin, toNodeId, toPin, cableId, coreIndex, color, lengthMm, note }) => ({
+    conn.wires.map(({ id, fromNodeId, fromPin, toNodeId, toPin, cableId, coreIndex, color, lengthMm, gauge, shielded, note }) => ({
       id,
       fromNodeId,
       fromPin,
@@ -171,6 +171,8 @@ function Editor({
       coreIndex,
       color,
       lengthMm: lengthMm ?? null,
+      gauge: gauge ?? '',
+      shielded: shielded ?? null,
       note,
     })),
   );
@@ -320,6 +322,8 @@ function Editor({
         coreIndex,
         color,
         lengthMm: null,
+        gauge: '',
+        shielded: null,
         note: '',
       };
       setWires((prev) => [...prev, wire]);
@@ -889,6 +893,23 @@ function WirePanel({
           <span className="small muted">Leave empty to use the connection length. Set it for harness branches that differ.</span>
         </label>
         <label>
+          Gauge
+          <input
+            value={wire.gauge}
+            placeholder={cable?.gauge ? `${cable.gauge} (cable)` : 'e.g. 22 AWG, 0.5 mm²'}
+            onChange={(e) => onChange({ gauge: e.target.value })}
+          />
+        </label>
+        <label className="check">
+          <input
+            type="checkbox"
+            checked={wire.shielded ?? cable?.shielded ?? false}
+            onChange={(e) => onChange({ shielded: e.target.checked })}
+          />
+          Shielded
+          {wire.shielded == null && cable && <span className="small muted"> (from cable)</span>}
+        </label>
+        <label>
           Note
           <input value={wire.note} onChange={(e) => onChange({ note: e.target.value })} />
         </label>
@@ -1024,6 +1045,8 @@ function WireTable({
               <th>To</th>
               <th>Cable</th>
               <th>Color</th>
+              <th>Gauge</th>
+              <th>Shielded</th>
               <th>Length (mm)</th>
               <th>Note</th>
               <th />
@@ -1043,6 +1066,24 @@ function WireTable({
                     <span className="swatches">
                       <Swatch color={w.color} /> {colorLabel(w.color)}
                     </span>
+                  </td>
+                  <td>
+                    <input
+                      className="gauge-input"
+                      value={w.gauge}
+                      placeholder={cable?.gauge || '—'}
+                      onClick={(e) => e.stopPropagation()}
+                      onChange={(e) => onUpdate(w.id, { gauge: e.target.value })}
+                    />
+                  </td>
+                  <td className="center">
+                    <input
+                      type="checkbox"
+                      title={w.shielded == null && cable ? 'Same as cable' : undefined}
+                      checked={w.shielded ?? cable?.shielded ?? false}
+                      onClick={(e) => e.stopPropagation()}
+                      onChange={(e) => onUpdate(w.id, { shielded: e.target.checked })}
+                    />
                   </td>
                   <td>
                     <LengthInput
@@ -1108,7 +1149,7 @@ function WireTable({
                   </select>
                 </span>
               </td>
-              <td colSpan={5}>
+              <td colSpan={7}>
                 <button
                   className="btn btn-sm"
                   disabled={!from.node || !to.node || !pinsOf(from.node).length || !pinsOf(to.node).length}

@@ -8,6 +8,9 @@ and this project uses [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Wire gauge and shielding**: each wire has its own editable gauge and a Shielded checkbox, in the wire panel
+  and directly in the editor's wire table. Left empty, they follow the wire's cable. Both show in the
+  pin-to-pin list of the wiring diagram and in the history.
 - **User accounts**: every page needs a sign-in, and there is no registration: accounts are made in the new
   **Admin panel** (user menu, top right). On the first start after the upgrade the server creates the account
   `admin` / `admin`, which has to choose a new password before anything else; existing projects are not touched.
@@ -94,6 +97,12 @@ and this project uses [Semantic Versioning](https://semver.org/).
 - Backup format v6 (folders, connection zones, locked projects). Older v1–v5 backups still restore.
 - The connector form asks for **pins per row**. A connector with 5 pins in 2 rows now has 10 pins
   (it had 5 before), and the form shows the total.
+
+### Fixed
+
+- **Print / PDF of a wiring diagram**: the whole diagram is now fitted onto an A4 landscape page (it used to be
+  cut to whatever fitted the screen), and wire, pin and swatch colors are printed. The pin-to-pin list starts on
+  the next page, repeating its header on every page.
 
 ### Upgrading
 

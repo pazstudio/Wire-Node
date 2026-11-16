@@ -225,6 +225,10 @@ model Wire {
   color        String         @default("")
   /// Length of this wire in mm; null means "same as the connection length".
   lengthMm     Float?
+  /// Wire gauge (e.g. "22 AWG", "0.5 mm²"); empty means "use the cable's gauge".
+  gauge        String         @default("")
+  /// Shielded wire; null means "same as the cable".
+  shielded     Boolean?
   note         String         @default("")
   connection   Connection     @relation(fields: [connectionId], references: [id], onDelete: Cascade)
   fromNode     ConnectionNode @relation("WireFrom", fields: [fromNodeId], references: [id], onDelete: Cascade)

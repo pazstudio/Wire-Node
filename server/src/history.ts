@@ -79,6 +79,8 @@ export async function connectionSnapshot(id: string): Promise<(ConnectionSnapsho
       color: w.color,
       cable: w.cable ? `${w.cable.name}${w.coreIndex != null ? ` core ${w.coreIndex + 1}` : ''}` : '',
       lengthMm: w.lengthMm,
+      gauge: w.gauge,
+      shielded: w.shielded,
       note: w.note,
     })),
   };

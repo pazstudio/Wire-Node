@@ -12,7 +12,7 @@ export interface ConnectionSnapshot {
   /** name: e.g. "Mainboard: J3 · Power" or "Splice (free)" */
   nodes: { id: string; name: string; pinCount: number }[];
   /** from/to: e.g. "Mainboard: J3 · Power pin 2 (VCC)" */
-  wires: { id: string; from: string; to: string; color: string; cable: string; lengthMm: number | null; note: string }[];
+  wires: { id: string; from: string; to: string; color: string; cable: string; lengthMm: number | null; gauge?: string; shielded?: boolean | null; note: string }[];
 }
 
 export interface ComponentSnapshot {
@@ -34,6 +34,7 @@ export const MAX_SUMMARY_LINES = 200;
 
 const q = (s: string) => `"${s}"`;
 const orNone = (s: string) => (s ? q(s) : 'none');
+const yn = (v: boolean | null | undefined) => (v == null ? 'as cable' : v ? 'yes' : 'no');
 const mm = (v: number | null) => (v == null ? 'not set' : `${v} mm`);
 
 function byId<T extends { id: string }>(items: T[]) {
@@ -82,6 +83,8 @@ export function diffConnection(a: ConnectionSnapshot, b: ConnectionSnapshot): st
     if (old.color !== w.color) parts.push(`color ${old.color || 'none'} → ${w.color || 'none'}`);
     if (old.cable !== w.cable) parts.push(`cable ${orNone(old.cable)} → ${orNone(w.cable)}`);
     if (old.lengthMm !== w.lengthMm) parts.push(`length ${mm(old.lengthMm)} → ${mm(w.lengthMm)}`);
+    if ((old.gauge ?? '') !== (w.gauge ?? '')) parts.push(`gauge ${orNone(old.gauge ?? '')} → ${orNone(w.gauge ?? '')}`);
+    if ((old.shielded ?? null) !== (w.shielded ?? null)) parts.push(`shielded ${yn(old.shielded)} → ${yn(w.shielded)}`);
     if (old.note !== w.note) parts.push(w.note ? `note ${q(w.note)}` : 'note removed');
     if (parts.length) lines.push(`Wire ${wireName(w)}: ${parts.join(', ')}`);
   }

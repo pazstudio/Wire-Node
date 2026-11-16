@@ -854,6 +854,12 @@ textarea:focus {
 .length-input {
   width: 90px;
 }
+.gauge-input {
+  width: 90px;
+}
+td.center {
+  text-align: center;
+}
 
 /* Connector node */
 .cn {
@@ -1426,22 +1432,64 @@ textarea:focus {
 }
 
 /* ---------- Print (wiring diagram) ---------- */
+/* Print layout of the wiring diagram. body.printing is set just before printing (see
+   usePrintFit) so the diagram is fitted to exactly the size it will have on paper. */
+body.printing .diagram-wrap {
+  width: 1040px;
+  height: 640px;
+  min-height: 0;
+  flex: none;
+}
+body.printing .editor-page {
+  width: 1040px;
+  padding: 0;
+}
+
+@page {
+  size: A4 landscape;
+  margin: 10mm;
+}
 @media print {
+  /* Browsers drop background colors (pin colors, swatches, zones) unless told otherwise. */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
   .no-print,
   .react-flow__controls,
-  .react-flow__minimap {
+  .react-flow__minimap,
+  .react-flow__background {
     display: none !important;
   }
-  body {
-    background: #fff;
+  html,
+  body,
+  .app,
+  .main {
+    background: #fff !important;
+    min-height: 0 !important;
   }
   .flow-wrap {
     border: none;
     height: 60vh;
   }
+  .diagram-wrap {
+    break-inside: avoid;
+    break-after: page;
+  }
+  .wire-table .table-wrap {
+    overflow: visible;
+    border: none;
+  }
+  .wire-table thead {
+    display: table-header-group;
+  }
+  .wire-table tr {
+    break-inside: avoid;
+  }
   .panel {
     border: none;
     padding: 0;
+    box-shadow: none;
   }
 }
 
