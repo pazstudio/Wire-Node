@@ -7,6 +7,8 @@
  * Built from the same rows as the backup, so it always matches the backup it is packed with.
  */
 
+import { createHash } from 'node:crypto';
+
 type Row = Record<string, any>;
 
 export interface WiringRows {
@@ -51,6 +53,19 @@ function pinsOf(conn: Row | undefined, type: Row | undefined, fallbackCount = 0)
 }
 
 const pinLabel = (p: Pin | undefined, n: number) => (p?.name ? `pin ${n} "${p.name}"` : `pin ${n}`);
+
+/**
+ * Fingerprint of a project's wiring summary, ignoring the export time and the order the database
+ * returned rows in. Equal hashes mean the summary would read the same. Null if the project does not exist.
+ */
+export function wiringReportHash(rows: WiringRows, projectId: string): string | null {
+  const byId = (a: Row, b: Row) => (String(a.id) < String(b.id) ? -1 : String(a.id) > String(b.id) ? 1 : 0);
+  const sorted = Object.fromEntries(
+    Object.entries(rows).map(([table, list]) => [table, Array.isArray(list) ? [...list].sort(byId) : list]),
+  ) as unknown as WiringRows;
+  const report = buildWiringReport(sorted, projectId, '');
+  return report === null ? null : createHash('sha256').update(report).digest('hex');
+}
 
 /** Wiring summary of one project. Returns null if the project does not exist. */
 export function buildWiringReport(rows: WiringRows, projectId: string, exportedAt = new Date().toISOString()): string | null {

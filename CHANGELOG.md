@@ -13,6 +13,10 @@ and this project uses [Semantic Versioning](https://semver.org/).
   next to each other, and components outside folders go below the zones. A zone already named after a folder
   is reused with its color; other zones are moved to the right of the layout. Inside each zone, blocks are
   swapped around to make the lines short, so a block wired to another zone sits on the side facing it.
+- **Touchscreen support** (phones, tablets): tapping a connector in a connection diagram shows the
+  component photo with the connector marked (tap the photo to edit the connector). On the project map, tapping
+  a component highlights its lines and lists its connections with a link to open it; tapping a line shows its
+  connection. In edit mode a finger drag pans the canvas and two fingers zoom.
 - **Easier to follow lines on the project map**: pointing at a component highlights its lines and the
   components they lead to and fades the rest; pointing at a line highlights it and its two ends. Line labels
   show for highlighted lines only, or for all lines with **All line labels**.
@@ -25,6 +29,10 @@ and this project uses [Semantic Versioning](https://semver.org/).
   wire by wire. Download it with **Wiring summary** on the project page, e.g. to give to an AI assistant for
   writing firmware config or G-code, or asking where a new part can be plugged in. Backups also contain one
   per project, in the `wiring` folder.
+- **Changes since the last wiring summary export**: when the project has changed in a way that shows in the
+  wiring summary since it was last downloaded, the project page says so, with when it was last exported. The
+  **Wiring summary** button gets an amber dot, and its tooltip shows the last export. Changes that don't show
+  in the summary, such as moving blocks on the project map, don't count. Backups keep the export history.
 - **The same component can be placed in a project more than once**, each time under its own name, such
   as "Main board - Master" and "Main board - Slave". Connections, the connection editor and the project map
   keep the placements apart. "Add existing component" lists the whole library, and each card has

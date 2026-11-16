@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildWiringReport, type WiringRows } from './wiringReport.js';
+import { buildWiringReport, wiringReportHash, type WiringRows } from './wiringReport.js';
 
 function rows(): WiringRows {
   return {
@@ -62,5 +62,30 @@ describe('buildWiringReport', () => {
 
   it('lists each wire of a connection with its details', () => {
     expect(md).toContain('- Octopus › M0 "Motor 0" pin 1 "2B" → inline connector "Frame plug" pin 1 [red, cable "4x0.25" core 1]');
+  });
+});
+
+describe('wiringReportHash', () => {
+  const hash = wiringReportHash(rows(), 'p');
+
+  it('ignores the order rows come back from the database in', () => {
+    const r = rows();
+    r.wires.reverse();
+    r.pcbConnectors.reverse();
+    r.connectionNodes.reverse();
+    expect(wiringReportHash(r, 'p')).toBe(hash);
+  });
+
+  it('ignores changes that do not show in the summary', () => {
+    const r = rows();
+    r.projectPcbs[0].mapX = 500;
+    expect(wiringReportHash(r, 'p')).toBe(hash);
+  });
+
+  it('changes when the wiring changes', () => {
+    const r = rows();
+    r.wires[1].color = 'blue';
+    expect(wiringReportHash(r, 'p')).not.toBe(hash);
+    expect(wiringReportHash(r, 'missing')).toBeNull();
   });
 });

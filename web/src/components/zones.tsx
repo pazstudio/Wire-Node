@@ -2,6 +2,7 @@ import { memo, useCallback, useRef, type Dispatch, type SetStateAction } from 'r
 import { NodeResizer, useReactFlow, type Node, type NodeProps, type XYPosition } from '@xyflow/react';
 import type { ZoneShape } from '../api';
 import { withAlpha } from '../colors';
+import { isTouchDevice } from '../touch';
 
 type ResizeParams = { x: number; y: number; width: number; height: number };
 export type ZoneNodeData = { zone: ZoneShape; edit: boolean; onResized?: (zoneId: string, p: ResizeParams) => void };
@@ -148,5 +149,8 @@ export function useZoneCarry<N extends Node>(setNodes: Dispatch<SetStateAction<N
 /**
  * Left-drag on empty canvas draws a selection box; the right or middle mouse button
  * (or holding Space) pans. Ctrl/Cmd-click or Shift-click adds to the selection.
+ * On a phone or tablet a finger drag pans instead (and two fingers zoom), as there is no other way to pan.
  */
-export const boxSelectProps: { selectionOnDrag: boolean; panOnDrag: number[] } = { selectionOnDrag: true, panOnDrag: [1, 2] };
+export const boxSelectProps: { selectionOnDrag?: boolean; panOnDrag?: number[] } = isTouchDevice
+  ? {}
+  : { selectionOnDrag: true, panOnDrag: [1, 2] };

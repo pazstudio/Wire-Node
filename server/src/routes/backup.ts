@@ -9,7 +9,7 @@ import { z } from 'zod';
 import { Prisma } from '@prisma/client';
 import { linkLegacyNodes, prisma } from '../db.js';
 import { UPLOAD_DIR } from '../storage.js';
-import { buildWiringReport } from '../wiringReport.js';
+import { buildWiringReport, wiringReportHash } from '../wiringReport.js';
 
 /**
  * Backup format (.tar.gz):
@@ -25,7 +25,8 @@ const FORMAT = 'wire-node-backup';
 // v5: connections record zones.
 // v6: projects record lockedAt; pcbs, connectorTypes and cables record frozenInProjectId and sourceId
 //     (frozen copies kept by locked projects); pcbConnectors record sourceId.
-const VERSION = 6;
+// v7: wiringExports (when each project's wiring summary was last downloaded, and by whom).
+const VERSION = 7;
 const MAX_RESTORE_BYTES = 20 * 1024 ** 3; // 20 GB
 
 const TABLES = [
@@ -40,6 +41,7 @@ const TABLES = [
   'connectionNodes',
   'wires',
   'zones',
+  'wiringExports',
 ] as const;
 type Table = (typeof TABLES)[number];
 type Rows = Record<Table, Record<string, unknown>[]>;
@@ -64,7 +66,7 @@ class HttpError extends Error {
 
 async function readAll(): Promise<Rows> {
   // One repeatable-read transaction, so the snapshot is consistent.
-  const [projects, cables, connectorTypes, pcbs, folders, projectPcbs, pcbConnectors, connections, connectionNodes, wires, zones] =
+  const [projects, cables, connectorTypes, pcbs, folders, projectPcbs, pcbConnectors, connections, connectionNodes, wires, zones, wiringExports] =
     await prisma.$transaction(
       [
         prisma.project.findMany(),
@@ -78,6 +80,7 @@ async function readAll(): Promise<Rows> {
         prisma.connectionNode.findMany(),
         prisma.wire.findMany(),
         prisma.zone.findMany(),
+        prisma.wiringExport.findMany(),
       ],
       { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
     );
@@ -93,6 +96,7 @@ async function readAll(): Promise<Rows> {
     connectionNodes,
     wires,
     zones,
+    wiringExports,
   } as Rows;
 }
 
@@ -188,16 +192,35 @@ export default async function backupRoutes(app: FastifyInstance) {
   });
 
   // Readable wiring summary of one project, e.g. to give to an AI assistant.
+  // Each download is recorded, so the project page can tell whether the project changed since.
   app.get<{ Params: { id: string } }>('/api/projects/:id/wiring.md', async (req, reply) => {
     const rows = await readAll();
     const md = buildWiringReport(rows, req.params.id);
     if (md === null) return reply.code(404).send({ message: 'Not found' });
+    await prisma.wiringExport.create({
+      // exportedBy: fill in from the signed-in user once Wire-Node has user accounts.
+      data: { projectId: req.params.id, exportedBy: null, contentHash: wiringReportHash(rows, req.params.id)! },
+    });
     const name = rows.projects.find((p) => p.id === req.params.id)!.name;
     const file = wiringFileName(name);
     reply
       .header('Content-Type', 'text/markdown; charset=utf-8')
       .header('Content-Disposition', `attachment; filename="${file}"`);
     return md;
+  });
+
+  // Last download of the wiring summary, and whether the summary would read differently now.
+  app.get<{ Params: { id: string } }>('/api/projects/:id/wiring-export', async (req, reply) => {
+    const [rows, last] = await Promise.all([
+      readAll(),
+      prisma.wiringExport.findFirst({ where: { projectId: req.params.id }, orderBy: { exportedAt: 'desc' } }),
+    ]);
+    const hash = wiringReportHash(rows, req.params.id);
+    if (hash === null) return reply.code(404).send({ message: 'Not found' });
+    return {
+      last: last && { exportedAt: last.exportedAt, exportedBy: last.exportedBy },
+      changedSinceExport: !!last && last.contentHash !== hash,
+    };
   });
 
   // ---------- Restore ----------
@@ -268,6 +291,7 @@ export default async function backupRoutes(app: FastifyInstance) {
       // 5. Replace the database contents in one transaction (all or nothing).
       await prisma.$transaction(
         async (tx) => {
+          await tx.wiringExport.deleteMany();
           await tx.wire.deleteMany();
           await tx.connectionNode.deleteMany();
           await tx.connection.deleteMany();
@@ -294,6 +318,7 @@ export default async function backupRoutes(app: FastifyInstance) {
           await create('connectionNodes', (data) => tx.connectionNode.createMany({ data }));
           await create('wires', (data) => tx.wire.createMany({ data }));
           await create('zones', (data) => tx.zone.createMany({ data }));
+          await create('wiringExports', (data) => tx.wiringExport.createMany({ data }));
           await linkLegacyNodes(tx);
         },
         { timeout: 10 * 60_000, maxWait: 30_000 },

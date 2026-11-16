@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState, type MouseEvent } from 'react';
+import { memo, useEffect, useRef, useState, type MouseEvent, type PointerEvent, type SyntheticEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useParams } from 'react-router-dom';
 import {
@@ -23,6 +23,7 @@ import {
   type WireModel,
 } from '../api';
 import { Swatch } from './ui';
+import { usingTouch } from '../touch';
 
 export type ConnNodeData = {
   title: string;
@@ -58,15 +59,21 @@ const PREVIEW_DELAY_MS = 350;
 const PREVIEW_CLOSE_MS = 250; // time to move the pointer from the node onto the preview
 const PREVIEW_MAX_W = 320;
 const PREVIEW_MAX_H = 240;
+/** A touch that moves less than this is a tap; more is a drag or pan. */
+const TAP_SLOP_PX = 10;
 
 /**
- * Opens the preview after the pointer rests on the node. It stays open while the pointer is on
- * the node or the preview, and closes shortly after leaving both, on press, scroll or zoom.
+ * With a mouse, opens the preview after the pointer rests on the node. It stays open while the
+ * pointer is on the node or the preview, and closes shortly after leaving both, on press, scroll or zoom.
+ * With a finger, a tap on the node opens it (not on a pin, which starts a wire) and a tap on the node
+ * again or anywhere else closes it.
  */
 function useHoverPreview(enabled: boolean) {
   const [anchor, setAnchor] = useState<DOMRect | null>(null);
   const timer = useRef<number>();
   const open = useRef(false);
+  const nodeEl = useRef<HTMLElement | null>(null);
+  const touch = useRef<{ x: number; y: number; wasOpen: boolean } | null>(null);
   open.current = !!anchor;
   const close = () => {
     window.clearTimeout(timer.current);
@@ -81,21 +88,52 @@ function useHoverPreview(enabled: boolean) {
   useEffect(() => {
     if (!anchor) return;
     const onWheel = () => setAnchor(null);
+    // A touch anywhere but on this node or the preview (e.g. to pan the diagram) closes it.
+    const onDown = (e: globalThis.PointerEvent) => {
+      if (e.pointerType === 'mouse') return;
+      const t = e.target as Element | null;
+      if (t && (nodeEl.current?.contains(t) || t.closest('.node-preview'))) return;
+      setAnchor(null);
+    };
     window.addEventListener('wheel', onWheel, { capture: true, passive: true });
-    return () => window.removeEventListener('wheel', onWheel, { capture: true });
+    window.addEventListener('pointerdown', onDown, { capture: true, passive: true });
+    return () => {
+      window.removeEventListener('wheel', onWheel, { capture: true });
+      window.removeEventListener('pointerdown', onDown, { capture: true });
+    };
   }, [anchor]);
   if (!enabled) return { anchor: null, handlers: {}, popupHandlers: {} };
   return {
     anchor,
     handlers: {
+      // Mouse events that follow a tap are made up by the browser: the pointer handlers deal with taps.
       onMouseEnter: (e: MouseEvent<HTMLDivElement>) => {
+        if (usingTouch()) return;
         window.clearTimeout(timer.current);
         if (open.current || e.buttons) return; // already open, or dragging a wire/the canvas across
         const el = e.currentTarget;
         timer.current = window.setTimeout(() => setAnchor(el.getBoundingClientRect()), PREVIEW_DELAY_MS);
       },
-      onMouseLeave: closeSoon,
-      onMouseDown: close,
+      onMouseLeave: () => !usingTouch() && closeSoon(),
+      onMouseDown: () => !usingTouch() && close(),
+      onPointerDown: (e: PointerEvent<HTMLDivElement>) => {
+        if (e.pointerType === 'mouse') return;
+        nodeEl.current = e.currentTarget;
+        touch.current = { x: e.clientX, y: e.clientY, wasOpen: open.current };
+      },
+      onPointerUp: (e: PointerEvent<HTMLDivElement>) => {
+        const t = touch.current;
+        touch.current = null;
+        if (e.pointerType === 'mouse' || !t) return;
+        const moved = Math.hypot(e.clientX - t.x, e.clientY - t.y) > TAP_SLOP_PX;
+        if (moved || t.wasOpen) return close();
+        if ((e.target as Element).closest('.react-flow__handle')) return;
+        window.clearTimeout(timer.current);
+        setAnchor(e.currentTarget.getBoundingClientRect());
+      },
+      onPointerCancel: () => {
+        touch.current = null;
+      },
     },
     popupHandlers: { onMouseEnter: keepOpen, onMouseLeave: closeSoon },
   };
@@ -113,9 +151,10 @@ function PreviewPopup({
   onMouseLeave?: () => void;
 }) {
   const { pid } = useParams();
+  const maxW = Math.min(PREVIEW_MAX_W, window.innerWidth - 32); // fits on a phone
   const known = preview.width > 0 && preview.height > 0;
-  const scale = known ? Math.min(PREVIEW_MAX_W / preview.width, PREVIEW_MAX_H / preview.height) : 1;
-  const boxW = known ? Math.round(preview.width * scale) : PREVIEW_MAX_W;
+  const scale = known ? Math.min(maxW / preview.width, PREVIEW_MAX_H / preview.height) : 1;
+  const boxW = known ? Math.round(preview.width * scale) : maxW;
   const boxH = known ? Math.round(preview.height * scale) : PREVIEW_MAX_H;
   const popW = boxW + 16;
   const popH = boxH + 64;
@@ -148,7 +187,7 @@ function PreviewPopup({
       : null;
   // The portal is still inside the node in React's tree: keep presses here from reaching the node
   // (which would close the preview, select the node or start a drag).
-  const stop = (e: MouseEvent) => e.stopPropagation();
+  const stop = (e: SyntheticEvent) => e.stopPropagation();
   return createPortal(
     <div
       className={`node-preview no-print ${link ? 'node-preview-link' : ''}`}
@@ -156,12 +195,14 @@ function PreviewPopup({
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
       onMouseDown={stop}
+      onPointerDown={stop}
+      onPointerUp={stop}
       onClick={stop}
     >
       {link ? (
         <Link to={link} title="Open the component to edit this connector">
           {content}
-          <div className="node-preview-action">Click to edit connector →</div>
+          <div className="node-preview-action">{usingTouch() ? 'Tap' : 'Click'} to edit connector →</div>
         </Link>
       ) : (
         content

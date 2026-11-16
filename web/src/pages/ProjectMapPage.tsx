@@ -28,8 +28,17 @@ import {
   type ZoneFlowNode,
   type ZoneNodeData,
 } from '../components/zones';
+import { isTouchDevice, usingTouch } from '../touch';
 
 type PcbNodeData = { placement: Placement };
+type Picker = {
+  x: number;
+  y: number;
+  title: string;
+  /** Link to the component (after tapping a component). */
+  open?: { to: string; label: string };
+  connections: { id: string; name: string; wireCount: number }[];
+};
 type PcbFlowNode = Node<PcbNodeData, 'pcb'>;
 type MapNode = PcbFlowNode | ZoneFlowNode;
 
@@ -83,7 +92,8 @@ function MapEditor({ projectId, data, edit, setEdit, reload }: MapEditorProps) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const [arranging, setArranging] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [picker, setPicker] = useState<{ edge: MapEdge; x: number; y: number } | null>(null);
+  /** Popup listing connections: of a line with several, or (after a tap) of a line or component. */
+  const [picker, setPicker] = useState<Picker | null>(null);
   /** Component or line under the mouse: its lines are highlighted and the rest of the map fades. */
   const [hover, setHover] = useState<{ node: string } | { edge: string } | null>(null);
   const [allLabels, setAllLabels] = useState(() => {
@@ -273,6 +283,20 @@ ${other} zone${other === 1 ? '' : 's'} not named after a folder ${other === 1 ? 
     }
   }
 
+  /** Opens the popup where the line or component was clicked, kept inside the map. */
+  function openPicker(e: { clientX: number; clientY: number }, p: Omit<Picker, 'x' | 'y'>) {
+    const r = wrapRef.current!.getBoundingClientRect();
+    const x = Math.max(8, Math.min(e.clientX - r.left, r.width - 268));
+    const y = Math.max(8, Math.min(e.clientY - r.top, r.height - 200));
+    setPicker({ ...p, x, y });
+  }
+
+  // Without hover (phone, tablet) a tap highlights first; the popup then opens the component or connection.
+  function clearTap() {
+    setPicker(null);
+    if (usingTouch()) setHover(null);
+  }
+
   const selectedZone = nodes.find((n): n is ZoneFlowNode => n.type === 'zone' && !!n.selected)?.data.zone ?? null;
 
   return (
@@ -315,8 +339,12 @@ ${other} zone${other === 1 ? '' : 's'} not named after a folder ${other === 1 ? 
       </div>
       <p className="hint">
         {edit
-          ? 'Drag component blocks to organize them; drag on empty space to select several and move them together (pan with the right mouse button or by holding Space). Add zones to group parts of the machine, or let "Arrange by folders" make one per component folder: drag a zone by its name to move it with everything inside, select it to rename, recolor or resize it.'
-          : 'Point at a component to highlight its lines and what they lead to; point at a line to see which connection it is. Click a component to open it, or a line to open the connection with its cable and pin details.'}
+          ? isTouchDevice
+            ? 'Drag component blocks to organize them; drag on empty space to move around, pinch to zoom. Add zones to group parts of the machine, or let "Arrange by folders" make one per component folder: drag a zone by its name to move it with everything inside, tap its name to rename, recolor or resize it.'
+            : 'Drag component blocks to organize them; drag on empty space to select several and move them together (pan with the right mouse button or by holding Space). Add zones to group parts of the machine, or let "Arrange by folders" make one per component folder: drag a zone by its name to move it with everything inside, select it to rename, recolor or resize it.'
+          : isTouchDevice
+            ? 'Tap a component to highlight its lines and list its connections; tap a line to see which connection it is. Drag to move around, pinch to zoom.'
+            : 'Point at a component to highlight its lines and what they lead to; point at a line to see which connection it is. Click a component to open it, or a line to open the connection with its cable and pin details.'}
       </p>
       {error && (
         <p className="error">
@@ -336,25 +364,40 @@ ${other} zone${other === 1 ? '' : 's'} not named after a folder ${other === 1 ? 
             onNodesChange={onNodesChange}
             onNodeDrag={carry.onNodeDrag}
             onNodeDragStop={(e, n, dragged) => [...dragged, ...carry.onNodeDragStop(e, n, dragged)].forEach(saveNodePosition)}
-            onNodeClick={(_e, n) => {
-              if (!edit && n.type === 'pcb') navigate(`/projects/${projectId}/pcbs/${(n as PcbFlowNode).data.placement.pcbId}`);
+            onNodeClick={(e, n) => {
+              if (edit || n.type !== 'pcb') return;
+              const placement = (n as PcbFlowNode).data.placement;
+              const to = `/projects/${projectId}/pcbs/${placement.pcbId}`;
+              if (!usingTouch()) return navigate(to);
+              setHover({ node: n.id });
+              const seen = new Set<string>();
+              const connections = data.edges
+                .filter((ed) => ed.source === n.id || ed.target === n.id)
+                .flatMap((ed) => ed.connections)
+                .filter((c) => !seen.has(c.id) && !!seen.add(c.id))
+                .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+              openPicker(e, { title: placement.name, open: { to, label: 'Open component →' }, connections });
             }}
             onEdgeClick={(e, edge) => {
               const me = (edge.data as { edge: MapEdge }).edge;
-              if (me.connections.length === 1) {
+              const touch = usingTouch();
+              if (touch) setHover({ edge: edge.id });
+              if (me.connections.length === 1 && !touch) {
                 navigate(`/projects/${projectId}/connections/${me.connections[0].id}`);
                 return;
               }
-              const r = wrapRef.current!.getBoundingClientRect();
-              setPicker({ edge: me, x: e.clientX - r.left, y: e.clientY - r.top });
+              openPicker(e, { title: me.connections.length === 1 ? 'Connection' : 'Connections', connections: me.connections });
             }}
-            onPaneClick={() => setPicker(null)}
-            onNodeMouseEnter={(_e, n) => n.type === 'pcb' && setHover({ node: n.id })}
-            onNodeMouseLeave={() => setHover(null)}
-            onEdgeMouseEnter={(_e, ed) => setHover({ edge: ed.id })}
-            onEdgeMouseLeave={() => setHover(null)}
+            onPaneClick={clearTap}
+            onMoveStart={(e) => e && clearTap()}
+            // Mouse events right after a tap are made up by the browser: taps are handled on click.
+            onNodeMouseEnter={(_e, n) => !usingTouch() && n.type === 'pcb' && setHover({ node: n.id })}
+            onNodeMouseLeave={() => !usingTouch() && setHover(null)}
+            onEdgeMouseEnter={(_e, ed) => !usingTouch() && setHover({ edge: ed.id })}
+            onEdgeMouseLeave={() => !usingTouch() && setHover(null)}
             onNodeDragStart={(e, n, dragged) => {
               setHover(null);
+              setPicker(null);
               carry.onNodeDragStart(e, n, dragged);
             }}
             nodesConnectable={false}
@@ -375,8 +418,14 @@ ${other} zone${other === 1 ? '' : 's'} not named after a folder ${other === 1 ? 
           )}
           {picker && (
             <div className="edge-picker" style={{ left: picker.x, top: picker.y }}>
-              <strong>Connections</strong>
-              {picker.edge.connections.map((c) => (
+              <strong>{picker.title}</strong>
+              {picker.open && (
+                <Link className="btn btn-sm btn-primary" to={picker.open.to}>
+                  {picker.open.label}
+                </Link>
+              )}
+              {picker.open && <span className="muted small">{picker.connections.length ? 'Connections' : 'Not connected yet'}</span>}
+              {picker.connections.map((c) => (
                 <Link key={c.id} to={`/projects/${projectId}/connections/${c.id}`}>
                   {c.name} <span className="muted small">({c.wireCount} wires)</span>
                 </Link>

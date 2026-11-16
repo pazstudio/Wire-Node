@@ -25,6 +25,22 @@ model Project {
   frozenPcbs   Pcb[]
   frozenTypes  ConnectorType[]
   frozenCables Cable[]
+  wiringExports WiringExport[]
+}
+
+/// One download of a project's wiring summary. Compared with the current summary to tell
+/// whether the project changed since it was last exported.
+model WiringExport {
+  id          String   @id @default(uuid())
+  projectId   String
+  exportedAt  DateTime @default(now())
+  /// Who exported it. Null until Wire-Node has user accounts.
+  exportedBy  String?
+  /// SHA-256 of the summary (without its export time), see wiringReportHash.
+  contentHash String
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, exportedAt])
 }
 
 /// Folder on a project tab: groups placed components (e.g. "Toolhead") or connections.

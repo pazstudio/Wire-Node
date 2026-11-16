@@ -383,6 +383,25 @@ h3 {
   border: 1px solid #fecaca;
   border-radius: var(--radius);
 }
+.export-notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  font-size: 0.9rem;
+  color: #92400e;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: var(--radius);
+}
+.stale-dot {
+  width: 8px;
+  height: 8px;
+  margin-left: 2px;
+  border-radius: 50%;
+  background: #f59e0b;
+}
 .add-row td {
   background: #f8fafc;
 }
@@ -989,6 +1008,12 @@ textarea:focus {
   flex-direction: column;
   gap: 6px;
   min-width: 200px;
+  max-width: 260px;
+  max-height: 60%;
+  overflow-y: auto;
+}
+.edge-picker a {
+  padding: 2px 0;
 }
 
 /* ---------- Mobile ---------- */

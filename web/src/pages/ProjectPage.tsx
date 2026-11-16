@@ -1,6 +1,7 @@
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { LockBanner, LockButton, useProject } from '../components/lock';
 import { Loading } from '../components/ui';
+import { WiringExportNotice, WiringSummaryButton } from '../components/wiringExport';
 import PcbsTab from './tabs/PcbsTab';
 import CablesTab from './tabs/CablesTab';
 import ConnectorsTab from './tabs/ConnectorsTab';
@@ -37,20 +38,14 @@ export default function ProjectPage() {
         </div>
         <div className="btn-row">
           <LockButton project={project} />
-          <a
-            className="btn"
-            href={`/api/projects/${pid}/wiring.md`}
-            download
-            title="Download a readable Markdown summary of every connector, pin and wire, e.g. to give to an AI assistant"
-          >
-            Wiring summary
-          </a>
+          <WiringSummaryButton projectId={pid} />
           <Link to={`/projects/${pid}/map`} className="btn btn-primary">
             Project map
           </Link>
         </div>
       </div>
       <LockBanner project={project} />
+      <WiringExportNotice projectId={pid} />
       <nav className="tabs">
         {TABS.map((t) => (
           <button
