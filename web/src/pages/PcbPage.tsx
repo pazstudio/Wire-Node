@@ -20,6 +20,8 @@ import { AutocompleteInput, usePinNameSuggestions } from '../components/autocomp
 import { ConnectorConnections } from '../components/connectorConnections';
 import { ConnectorTypeForm } from '../components/forms';
 import { ColorPicker, Loading, SaveIndicator, Swatch } from '../components/ui';
+import { ProjectCrumb } from '../components/navigation';
+import { useRecordVisit } from '../recents';
 import { colorLabel } from '../colors';
 
 // Allow pinch-zoom while a drag is in progress.
@@ -205,6 +207,7 @@ export default function PcbPage() {
 function PcbEditor({ pcb, projectId, types }: { pcb: PcbDetail; projectId: string; types: ConnectorType[] }) {
   const qc = useQueryClient();
   const [params] = useSearchParams();
+  useRecordVisit(projectId, { kind: 'pcb', id: pcb.id, name: pcb.name });
   const imgW = pcb.imageWidth;
   const imgH = pcb.imageHeight;
   const image = useHtmlImage(imgUrl(pcb.imagePath));
@@ -471,7 +474,8 @@ function PcbEditor({ pcb, projectId, types }: { pcb: PcbDetail; projectId: strin
     <div className="pcb-page">
       <div className="pcb-toolbar no-print">
         <div className="crumbs">
-          <Link to={`/projects/${projectId}`}>Project</Link> / <strong>{pcb.name}</strong>
+          <ProjectCrumb projectId={projectId} /> / <Link to={`/projects/${projectId}?tab=pcbs`}>Components</Link> /{' '}
+          <strong>{pcb.name}</strong>
         </div>
         <div className="btn-row">
           {frozen ? (

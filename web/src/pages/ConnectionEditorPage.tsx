@@ -51,6 +51,8 @@ import {
 } from '../components/zones';
 import { ColorPicker, Loading, Modal, SaveIndicator, Swatch } from '../components/ui';
 import { colorLabel } from '../colors';
+import { ProjectCrumb } from '../components/navigation';
+import { useRecordVisit } from '../recents';
 
 const availableKey = (placementId: string | null, connectorId: string | null) => `${placementId}:${connectorId}`;
 
@@ -120,6 +122,7 @@ function Editor({
   const qc = useQueryClient();
   const rf = useReactFlow();
   const flowWrap = useRef<HTMLDivElement>(null);
+  useRecordVisit(projectId, { kind: 'connection', id: conn.id, name: conn.name });
 
   const [wires, setWires] = useState<WireModel[]>(() =>
     conn.wires.map(({ id, fromNodeId, fromPin, toNodeId, toPin, cableId, coreIndex, color, lengthMm, note }) => ({
@@ -446,7 +449,7 @@ function Editor({
     <div className="editor-page">
       <div className="editor-toolbar">
         <div className="crumbs">
-          <Link to={`/projects/${projectId}?tab=connections`}>Connections</Link> /
+          <ProjectCrumb projectId={projectId} /> / <Link to={`/projects/${projectId}?tab=connections`}>Connections</Link> /
         </div>
         <input
           className="title-input"

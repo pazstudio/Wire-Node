@@ -17,6 +17,9 @@ and this project uses [Semantic Versioning](https://semver.org/).
   component photo with the connector marked (tap the photo to edit the connector). On the project map, tapping
   a component highlights its lines and lists its connections with a link to open it; tapping a line shows its
   connection. In edit mode a finger drag pans the canvas and two fingers zoom.
+- **Faster navigation**: a project menu in the top bar, a quick switcher (Ctrl K or /) to jump to any
+  component, connection, project or page, a strip of recently opened components and connections on the project
+  page, breadcrumbs back to the project and tab, and a keyboard shortcuts help (?).
 - **Easier to follow lines on the project map**: pointing at a component highlights its lines and the
   components they lead to and fades the rest; pointing at a line highlights it and its two ends. Line labels
   show for highlighted lines only, or for all lines with **All line labels**.

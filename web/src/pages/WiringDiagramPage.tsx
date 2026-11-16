@@ -8,6 +8,8 @@ import { useLocked } from '../components/lock';
 import { Loading, Swatch } from '../components/ui';
 import { zoneFlowNode, ZoneNode, type ZoneFlowNode } from '../components/zones';
 import { colorLabel } from '../colors';
+import { ProjectCrumb } from '../components/navigation';
+import { useRecordVisit } from '../recents';
 
 const diagramNodeTypes = { ...nodeTypes, zone: ZoneNode };
 const isConnector = (n: ConnFlowNode | ZoneFlowNode): n is ConnFlowNode => n.type === 'connector';
@@ -37,12 +39,13 @@ function Diagram({ projectId, conn }: { projectId: string; conn: Connection }) {
   const connNodes = useMemo(() => nodes.filter(isConnector), [nodes]);
   const edges = useMemo(() => buildEdges(connNodes, conn.wires), [connNodes, conn.wires]);
   const nodeById = new Map(connNodes.map((n) => [n.id, n]));
+  useRecordVisit(projectId, { kind: 'connection', id: conn.id, name: conn.name });
 
   return (
     <div className="editor-page">
       <div className="editor-toolbar">
         <div className="crumbs no-print">
-          <Link to={`/projects/${projectId}?tab=connections`}>Connections</Link> /
+          <ProjectCrumb projectId={projectId} /> / <Link to={`/projects/${projectId}?tab=connections`}>Connections</Link> /
         </div>
         <h1 className="diagram-title">{conn.name}</h1>
         <span className={`badge ${conn.kind === 'harness' ? 'badge-harness' : ''}`}>{conn.kind}</span>

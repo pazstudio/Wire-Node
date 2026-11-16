@@ -6,6 +6,8 @@ import ConnectionEditorPage from './pages/ConnectionEditorPage';
 import WiringDiagramPage from './pages/WiringDiagramPage';
 import ProjectMapPage from './pages/ProjectMapPage';
 import BackupPage from './pages/BackupPage';
+import { ProjectMenu, QuickSwitcherButton } from './components/navigation';
+import { ShortcutsButton } from './components/shortcuts';
 
 export default function App() {
   return (
@@ -14,8 +16,11 @@ export default function App() {
         <Link to="/" className="brand">
           <span className="brand-mark" /> Wire-Node
         </Link>
+        <ProjectMenu />
         <nav className="topnav">
-          <Link to="/backup">Backup &amp; restore</Link>
+          <QuickSwitcherButton />
+          <Link to="/backup" className="topnav-backup">Backup &amp; restore</Link>
+          <ShortcutsButton />
         </nav>
       </header>
       <main className="main">
