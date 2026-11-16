@@ -1,4 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCan } from '../auth';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -87,6 +88,7 @@ type MapEditorProps = {
 };
 
 function MapEditor({ projectId, data, edit, setEdit, reload }: MapEditorProps) {
+  const canEdit = useCan('projects.edit');
   const navigate = useNavigate();
   const rf = useReactFlow();
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -309,7 +311,7 @@ ${other} zone${other === 1 ? '' : 's'} not named after a folder ${other === 1 ? 
         {data.project.lockedAt ? (
           <span className="badge badge-locked">🔒 Locked</span>
         ) : (
-          <div className="seg">
+          canEdit && <div className="seg">
             <button className={!edit ? 'active' : ''} onClick={() => setEdit(false)}>
               View
             </button>

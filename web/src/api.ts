@@ -22,6 +22,8 @@ export interface Pcb {
   imageHeight: number;
   /** Set on the frozen copy kept by a locked project; such a copy cannot be edited. */
   frozenInProjectId?: string | null;
+  /** On a frozen copy: the library component it was copied from. */
+  sourceId?: string | null;
   _count?: { connectors: number };
   projects?: { project: { id: string; name: string } }[];
 }
@@ -213,26 +215,88 @@ export interface MapData {
   edges: MapEdge[];
 }
 
+// ---------- Accounts and history ----------
+
+export type Permission =
+  | 'projects.create'
+  | 'projects.edit'
+  | 'projects.delete'
+  | 'projects.lock'
+  | 'projects.unlock'
+  | 'connections.delete'
+  | 'library.edit'
+  | 'library.delete'
+  | 'backups.manage'
+  | 'users.manage';
+
+export interface Me {
+  id: string;
+  username: string;
+  displayName: string;
+  /** Display name, or the username. */
+  name: string;
+  groupId: string;
+  groupName: string;
+  isAdmin: boolean;
+  permissions: Permission[];
+  mustChangePassword: boolean;
+}
+
+export interface ChangeEntry {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  userId: string | null;
+  userName: string;
+  projectId: string | null;
+  entityType: 'connection' | 'component' | 'project';
+  entityId: string;
+  entityName: string;
+  action: 'create' | 'edit' | 'delete' | 'lock' | 'unlock' | 'place' | 'remove';
+  reason: string;
+  summary: string[];
+}
+
 // ---------- HTTP helpers ----------
 
-async function request<T>(method: string, url: string, body?: unknown): Promise<T> {
-  const init: RequestInit = { method };
+/** Error from the API, with the HTTP status and the server's error code (e.g. "EDIT_SESSION"). */
+export class ApiError extends Error {
+  constructor(message: string, public status: number, public code?: string) {
+    super(message);
+  }
+}
+
+/** Fired when the server says the browser is not signed in (any more); the app shows the sign-in page. */
+export const SIGNED_OUT_EVENT = 'wn:signed-out';
+
+export interface RequestOptions {
+  /** Editing session the change belongs to (see useEditSession). */
+  changeId?: string | null;
+}
+
+async function request<T>(method: string, url: string, body?: unknown, opts?: RequestOptions): Promise<T> {
+  const headers: Record<string, string> = {};
+  const init: RequestInit = { method, headers };
   if (body instanceof FormData) {
     init.body = body;
   } else if (body !== undefined) {
     init.body = JSON.stringify(body);
-    init.headers = { 'Content-Type': 'application/json' };
+    headers['Content-Type'] = 'application/json';
   }
+  if (opts?.changeId) headers['X-Change-Id'] = opts.changeId;
   const res = await fetch(url, init);
   if (!res.ok) {
     let message = `${res.status} ${res.statusText}`;
+    let code: string | undefined;
     try {
       const j = await res.json();
       if (j?.message) message = j.message;
+      if (typeof j?.code === 'string') code = j.code;
     } catch {
       /* not JSON */
     }
-    throw new Error(message);
+    if (res.status === 401 || code === 'PASSWORD_CHANGE_REQUIRED') window.dispatchEvent(new Event(SIGNED_OUT_EVENT));
+    throw new ApiError(message, res.status, code);
   }
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
@@ -240,11 +304,16 @@ async function request<T>(method: string, url: string, body?: unknown): Promise<
 
 export const api = {
   get: <T>(url: string) => request<T>('GET', url),
-  post: <T>(url: string, body: unknown) => request<T>('POST', url, body),
-  put: <T>(url: string, body: unknown) => request<T>('PUT', url, body),
-  patch: <T>(url: string, body: unknown) => request<T>('PATCH', url, body),
-  del: <T>(url: string) => request<T>('DELETE', url),
+  post: <T>(url: string, body: unknown, opts?: RequestOptions) => request<T>('POST', url, body, opts),
+  put: <T>(url: string, body: unknown, opts?: RequestOptions) => request<T>('PUT', url, body, opts),
+  patch: <T>(url: string, body: unknown, opts?: RequestOptions) => request<T>('PATCH', url, body, opts),
+  del: <T>(url: string, opts?: RequestOptions) => request<T>('DELETE', url, undefined, opts),
 };
+
+/** Adds ?reason=... (or &reason=...) to a URL, for changes that need a reason. */
+export function withReason(url: string, reason: string) {
+  return `${url}${url.includes('?') ? '&' : '?'}reason=${encodeURIComponent(reason)}`;
+}
 
 export const imgUrl = (p?: string | null) => (p ? `/uploads/${p}` : '');
 

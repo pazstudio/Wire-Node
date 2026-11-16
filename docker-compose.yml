@@ -25,12 +25,17 @@ services:
     environment:
       DATABASE_URL: postgresql://wirenode:${POSTGRES_PASSWORD:-wirenode}@db:5432/wirenode?schema=public
       UPLOAD_DIR: /data/uploads
+      BACKUP_DIR: /data/backups
       PORT: 8080
     ports:
       - "8080:8080"
     volumes:
       - uploads:/data/uploads
+      # Automatic backups (admin panel > Backups). Safer on another disk or a NAS, e.g.:
+      #   - /mnt/nas/wire-node-backups:/data/backups
+      - backups:/data/backups
 
 volumes:
   pgdata:
   uploads:
+  backups:

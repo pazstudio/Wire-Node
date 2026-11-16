@@ -1,7 +1,9 @@
 import { useState, type FormEvent } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { api, errorMessage, formatLength, parseLength, type ConnectionSummary, type Folder, type Placement } from '../../api';
+import { api, errorMessage, formatLength, parseLength, withReason, type ConnectionSummary, type Folder, type Placement } from '../../api';
+import { useCan } from '../../auth';
+import { useAskReason } from '../../components/reason';
 import {
   FolderModal,
   FolderSection,
@@ -26,23 +28,30 @@ export default function ConnectionsTab({ projectId, locked }: { projectId: strin
     queryFn: () => api.get<ConnectionSummary[]>(`/api/projects/${projectId}/connections`),
   });
   const foldersQ = useFolders(projectId, 'connections');
-  const [creating, setCreating] = useState(params.get('new') === '1' && !locked);
+  const ask = useAskReason();
+  const canEdit = useCan('projects.edit');
+  const canDelete = useCan('connections.delete');
+  const readOnly = locked || !canEdit;
+  const [creating, setCreating] = useState(params.get('new') === '1' && !readOnly);
   const [folderForm, setFolderForm] = useState<Folder | 'new' | null>(null);
   const collapsed = useCollapsed();
   const dnd = useFolderDnd('connections', (id, folderId) => {
     const c = q.data?.find((x) => x.id === id);
     if (c) moveTo(c, folderId);
-  }, !locked);
+  }, !readOnly);
 
   async function remove(c: ConnectionSummary) {
-    if (!confirm(`Delete connection "${c.name}" and its ${c.wireCount} wire(s)?`)) return;
-    try {
-      await api.del(`/api/connections/${c.id}`);
-      qc.invalidateQueries({ queryKey: ['connections', projectId] });
-      qc.invalidateQueries({ queryKey: ['map', projectId] });
-    } catch (e) {
-      alert(errorMessage(e));
-    }
+    await ask({
+      title: `Delete connection "${c.name}"`,
+      message: <p>The connection and its {c.wireCount} wire(s) are deleted. Its history is kept.</p>,
+      confirmLabel: 'Delete connection',
+      danger: true,
+      action: async (reason) => {
+        await api.del(withReason(`/api/connections/${c.id}`, reason));
+        qc.invalidateQueries({ queryKey: ['connections', projectId] });
+        qc.invalidateQueries({ queryKey: ['map', projectId] });
+      },
+    });
   }
 
   async function moveTo(c: ConnectionSummary, folderId: string | null) {
@@ -113,26 +122,30 @@ export default function ConnectionsTab({ projectId, locked }: { projectId: strin
               <td className="right nowrap">
                 {!locked && (
                   <>
-                    {folders.length > 0 && (
+                    {canEdit && folders.length > 0 && (
                       <FolderSelect folders={folders} value={c.folderId} onChange={(f) => moveTo(c, f)} label={`Folder of ${c.name}`} />
                     )}{' '}
-                    <Link
-                      className="btn btn-sm"
-                      to={`/projects/${projectId}/connections/${c.id}/edit`}
-                      onClick={(e) => e.stopPropagation()}
-                      draggable={false}
-                    >
-                      Edit
-                    </Link>{' '}
-                    <button
-                      className="btn btn-sm btn-danger"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        remove(c);
-                      }}
-                    >
-                      Delete
-                    </button>
+                    {canEdit && (
+                      <Link
+                        className="btn btn-sm"
+                        to={`/projects/${projectId}/connections/${c.id}/edit`}
+                        onClick={(e) => e.stopPropagation()}
+                        draggable={false}
+                      >
+                        Edit
+                      </Link>
+                    )}{' '}
+                    {canDelete && (
+                      <button
+                        className="btn btn-sm btn-danger"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          remove(c);
+                        }}
+                      >
+                        Delete
+                      </button>
+                    )}
                   </>
                 )}
               </td>
@@ -150,7 +163,7 @@ export default function ConnectionsTab({ projectId, locked }: { projectId: strin
           A connection links connectors drawn on components. Add more than two connectors to build a harness with splits.
           Sort connections into folders: drag a row onto a folder.
         </p>
-        {!locked && (
+        {!readOnly && (
           <div className="btn-row">
             <button className="btn" onClick={() => setFolderForm('new')}>
               + New folder
@@ -178,7 +191,7 @@ export default function ConnectionsTab({ projectId, locked }: { projectId: strin
             onToggle={() => collapsed.toggle(f.id)}
             onRename={() => setFolderForm(f)}
             onDelete={() => removeFolder(f, items.length)}
-            readOnly={locked}
+            readOnly={readOnly}
             emptyText="Empty. Drag connections here, or choose this folder on a connection."
           >
             {table(items)}

@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { api, errorMessage, type Project } from '../api';
+import { api, withReason, type Project } from '../api';
+import { useCan } from '../auth';
+import { useAskReason } from '../components/reason';
 import { ProjectForm } from '../components/forms';
 import { Loading } from '../components/ui';
 
@@ -11,15 +13,22 @@ export default function ProjectsPage() {
   const q = useQuery({ queryKey: ['projects'], queryFn: () => api.get<Project[]>('/api/projects') });
   const [editing, setEditing] = useState<Project | 'new' | null>(null);
   const [duplicating, setDuplicating] = useState<Project | null>(null);
+  const ask = useAskReason();
+  const canCreate = useCan('projects.create');
+  const canEdit = useCan('projects.edit');
+  const canDelete = useCan('projects.delete');
 
   async function remove(p: Project) {
-    if (!confirm(`Delete project "${p.name}"? Its connections and map are deleted. Library components, cables and connectors are kept.`)) return;
-    try {
-      await api.del(`/api/projects/${p.id}`);
-      qc.invalidateQueries({ queryKey: ['projects'] });
-    } catch (e) {
-      alert(errorMessage(e));
-    }
+    await ask({
+      title: `Delete project "${p.name}"`,
+      message: <p>Its connections and map are deleted. Library components, cables and connectors are kept.</p>,
+      confirmLabel: 'Delete project',
+      danger: true,
+      action: async (reason) => {
+        await api.del(withReason(`/api/projects/${p.id}`, reason));
+        qc.invalidateQueries({ queryKey: ['projects'] });
+      },
+    });
   }
 
   if (!q.data) return <Loading error={q.error} />;
@@ -28,9 +37,11 @@ export default function ProjectsPage() {
     <div className="page">
       <div className="page-head">
         <h1>Projects</h1>
-        <button className="btn btn-primary" onClick={() => setEditing('new')}>
-          + New project
-        </button>
+        {canCreate && (
+          <button className="btn btn-primary" onClick={() => setEditing('new')}>
+            + New project
+          </button>
+        )}
       </div>
       {q.data.length === 0 && <p className="empty">No projects yet. Create one for each machine.</p>}
       <div className="card-grid">
@@ -47,13 +58,17 @@ export default function ProjectsPage() {
               </div>
             </Link>
             <div className="card-actions">
-              <button className="btn btn-sm" onClick={() => setEditing(p)}>
-                Edit
-              </button>
-              <button className="btn btn-sm" onClick={() => setDuplicating(p)} title="Copy this project, e.g. to start a new revision">
-                Duplicate
-              </button>
-              {!p.lockedAt && (
+              {canEdit && (
+                <button className="btn btn-sm" onClick={() => setEditing(p)}>
+                  Edit
+                </button>
+              )}
+              {canCreate && (
+                <button className="btn btn-sm" onClick={() => setDuplicating(p)} title="Copy this project, e.g. to start a new revision">
+                  Duplicate
+                </button>
+              )}
+              {canDelete && !p.lockedAt && (
                 <button className="btn btn-sm btn-danger" onClick={() => remove(p)}>
                   Delete
                 </button>

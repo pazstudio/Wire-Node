@@ -8,6 +8,28 @@ and this project uses [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **User accounts**: every page needs a sign-in, and there is no registration: accounts are made in the new
+  **Admin panel** (user menu, top right). On the first start after the upgrade the server creates the account
+  `admin` / `admin`, which has to choose a new password before anything else; existing projects are not touched.
+  New accounts get a temporary password and choose their own at the first sign-in. Disabling an account or
+  resetting its password signs it out everywhere. The last admin account cannot be disabled, deleted or demoted.
+- **Groups and permissions**: each user is in one group; the group's permissions (create, edit, delete, lock and
+  unlock projects, delete connections, edit or delete the library, backups, users) are ticked in a table in the
+  admin panel. The groups Admin, Editor and Member are made on first start; Admin always has every permission.
+- **History ("Recent changes")** of every connection and component, plus a History tab on the project page and
+  an Activity tab in the admin panel: who changed what, when, why, and a readable list of what changed (e.g.
+  "Added wire Main board: J1 pin 1 (24V) → Fan pin 1"). Opening an editor asks for the reason first; everything
+  saved until the editor is left is one entry. Locking, unlocking and deleting also need a reason.
+- **Automatic backups**: in the admin panel, set how often a backup is made and how many are kept (the oldest is
+  deleted when a new one is made). Stored backups can be downloaded, restored or deleted there. Before any restore,
+  the current state is saved as a backup. Set `BACKUP_DIR` (Docker: the `backups` volume) to keep them elsewhere.
+
+### Changed
+
+- Backups (format v8) also hold the history and the accounts, including password hashes, so keep them private.
+  Restoring keeps the accounts of the server and adds accounts from the backup whose username is free.
+- The wiring summary records who downloaded it.
+
 - **Arrange by folders** on the project map (Edit mode): every folder on the Components tab becomes a zone
   with its components laid out inside, most-wired components first. Folders that share wires are placed
   next to each other, and components outside folders go below the zones. A zone already named after a folder

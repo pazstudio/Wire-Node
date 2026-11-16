@@ -154,7 +154,10 @@ export function PcbForm({
   const [description, setDescription] = useState(pcb?.description ?? '');
   const [folderId, setFolderId] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
+  const [reason, setReason] = useState('');
   const [preview, setPreview] = useState<string>(pcb ? imgUrl(pcb.thumbPath) : '');
+  // Changing a library component needs a reason for its history (renaming the placement does not).
+  const libraryChanged = !!pcb && (name.trim() !== pcb.name || description !== pcb.description || !!file);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const library = useQuery({ queryKey: ['pcbs'], queryFn: () => api.get<Pcb[]>('/api/pcbs') });
@@ -171,6 +174,10 @@ export function PcbForm({
       setError(`"${duplicate.name}" is already in the component library.`);
       return;
     }
+    if (libraryChanged && reason.trim().length < 3) {
+      setError('Give a reason for this change');
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -182,8 +189,13 @@ export function PcbForm({
         fd.append('placementName', placementName);
         if (folderId) fd.append('folderId', folderId);
       }
+      if (pcb) fd.append('reason', reason.trim());
       if (file) fd.append('image', file);
-      const saved = pcb ? await api.put<Pcb>(`/api/pcbs/${pcb.id}`, fd) : await api.post<Pcb>('/api/pcbs', fd);
+      const saved = !pcb
+        ? await api.post<Pcb>('/api/pcbs', fd)
+        : libraryChanged
+          ? await api.put<Pcb>(`/api/pcbs/${pcb.id}`, fd)
+          : pcb;
       if (placement && placementName.trim() !== initialPlacementName) {
         await api.patch(`/api/project-pcbs/${placement.id}`, { name: placementName });
       }
@@ -255,6 +267,19 @@ export function PcbForm({
           </p>
         )}
         {preview && <img src={preview} alt="" className="form-preview" />}
+        {libraryChanged && (
+          <label>
+            Reason for this change
+            <textarea
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              rows={2}
+              maxLength={1000}
+              placeholder="e.g. New photo of the Rev C board"
+            />
+            <span className="hint">Kept in the component's history together with your name.</span>
+          </label>
+        )}
         <ErrorText error={error} />
         <div className="form-actions">
           <button type="button" className="btn" onClick={onClose}>

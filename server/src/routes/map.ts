@@ -5,6 +5,7 @@ import { computeMapEdges } from '../mapEdges.js';
 import { arrangeByFolders } from '../mapLayout.js';
 import { assertUnlocked } from '../freeze.js';
 import { listPlacements } from './projects.js';
+import { need } from '../auth.js';
 
 const ZoneBody = z.object({
   name: z.string().default('Zone'),
@@ -56,6 +57,7 @@ export default async function mapRoutes(app: FastifyInstance) {
   // Makes a zone for every components folder (reusing a zone with the folder's name) and lays
   // the components out inside them. Other zones are left where they are.
   app.post<P>('/api/projects/:id/map/arrange-by-folders', async (req) => {
+    need(req, 'projects.edit');
     const projectId = req.params.id;
     await assertUnlocked(projectId);
     const [placements, folders, zones, edges] = await Promise.all([
@@ -75,18 +77,21 @@ export default async function mapRoutes(app: FastifyInstance) {
   });
 
   app.post<P>('/api/projects/:id/zones', async (req, reply) => {
+    need(req, 'projects.edit');
     await assertUnlocked(req.params.id);
     const zone = await prisma.zone.create({ data: { ...ZoneBody.parse(req.body), projectId: req.params.id } });
     return reply.code(201).send(zone);
   });
 
   app.put<P>('/api/zones/:id', async (req) => {
+    need(req, 'projects.edit');
     const zone = await prisma.zone.findUniqueOrThrow({ where: { id: req.params.id } });
     await assertUnlocked(zone.projectId);
     return prisma.zone.update({ where: { id: zone.id }, data: ZoneBody.partial().parse(req.body) });
   });
 
   app.delete<P>('/api/zones/:id', async (req) => {
+    need(req, 'projects.edit');
     const zone = await prisma.zone.findUnique({ where: { id: req.params.id } });
     if (zone) await assertUnlocked(zone.projectId);
     await prisma.zone.deleteMany({ where: { id: req.params.id } });

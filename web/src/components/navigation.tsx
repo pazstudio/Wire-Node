@@ -169,7 +169,7 @@ function useSwitcherSections(query: string): Section[] {
     const pages: NavItem[] = [
       ...(pid ? projectPages(pid) : []),
       { key: 'g-projects', kind: 'page', title: 'All projects', to: '/' },
-      { key: 'g-backup', kind: 'page', title: 'Backup & restore', to: '/backup' },
+      { key: 'g-backup', kind: 'page', title: 'Admin: backups', to: '/admin?tab=backups' },
     ];
 
     const { kind, words } = parseQuery(query);

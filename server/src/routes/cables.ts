@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { prisma } from '../db.js';
 import { assertNotFrozen } from '../freeze.js';
+import { need } from '../auth.js';
 
 const CableBody = z.object({
   name: z.string().trim().min(1, 'Name is required'),
@@ -28,16 +29,19 @@ export default async function cableRoutes(app: FastifyInstance) {
   );
 
   app.post('/api/cables', async (req, reply) => {
+    need(req, 'library.edit');
     const cable = await prisma.cable.create({ data: normalize(req.body) });
     return reply.code(201).send(cable);
   });
 
   app.put<P>('/api/cables/:id', async (req) => {
+    need(req, 'library.edit');
     assertNotFrozen(await prisma.cable.findUniqueOrThrow({ where: { id: req.params.id } }));
     return prisma.cable.update({ where: { id: req.params.id }, data: normalize(req.body) });
   });
 
   app.delete<P>('/api/cables/:id', async (req) => {
+    need(req, 'library.delete');
     assertNotFrozen(await prisma.cable.findUniqueOrThrow({ where: { id: req.params.id } }));
     await prisma.cable.delete({ where: { id: req.params.id } });
     return { ok: true };

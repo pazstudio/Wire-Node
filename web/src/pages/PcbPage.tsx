@@ -22,6 +22,9 @@ import { ConnectorTypeForm } from '../components/forms';
 import { ColorPicker, Loading, SaveIndicator, Swatch } from '../components/ui';
 import { ProjectCrumb } from '../components/navigation';
 import { useRecordVisit } from '../recents';
+import { useCan } from '../auth';
+import { useEditSession } from '../components/reason';
+import { HistoryList } from '../components/history';
 import { colorLabel } from '../colors';
 
 // Allow pinch-zoom while a drag is in progress.
@@ -92,13 +95,15 @@ function useHtmlImage(src: string) {
  * Debounced, per-connector autosave. Saves for the same connector are chained so
  * they always reach the server in order; the latest local state is sent each time.
  */
-function useConnectorAutosave(getItem: (id: string) => PcbConnector | undefined) {
+function useConnectorAutosave(getItem: (id: string) => PcbConnector | undefined, getChangeId: () => string | null) {
   const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   const chains = useRef(new Map<string, Promise<void>>());
   const inflight = useRef(0);
   const failed = useRef(new Set<string>());
   const getRef = useRef(getItem);
   getRef.current = getItem;
+  const changeIdRef = useRef(getChangeId);
+  changeIdRef.current = getChangeId;
   const [status, setStatus] = useState<SaveStatus>('saved');
 
   const refresh = useCallback(() => {
@@ -116,7 +121,7 @@ function useConnectorAutosave(getItem: (id: string) => PcbConnector | undefined)
           const item = getRef.current(id);
           if (!item) return;
           try {
-            await api.put(`/api/pcb-connectors/${id}`, toPayload(item));
+            await api.put(`/api/pcb-connectors/${id}`, toPayload(item), { changeId: changeIdRef.current() });
             failed.current.delete(id);
           } catch {
             failed.current.add(id);
@@ -218,7 +223,22 @@ function PcbEditor({ pcb, projectId, types }: { pcb: PcbDetail; projectId: strin
 
   // The frozen copy kept by a locked project can only be viewed.
   const frozen = !!pcb.frozenInProjectId;
-  const [mode, setMode] = useState<'view' | 'edit'>(params.get('edit') === '1' && !frozen ? 'edit' : 'view');
+  const canEdit = useCan('library.edit') && !frozen;
+  // Edit mode needs an editing session: the reason is asked once, every save is recorded with it.
+  const edit = useEditSession('component', pcb.id, pcb.name);
+  const changeIdRef = useRef<string | null>(null);
+  changeIdRef.current = edit.changeId;
+  const [mode, setMode] = useState<'view' | 'edit'>('view');
+  const enterEdit = useCallback(async () => {
+    if (changeIdRef.current || (await edit.start())) setMode('edit');
+  }, [edit]);
+  const askedOnOpen = useRef(false);
+  useEffect(() => {
+    // ?edit=1 (e.g. right after uploading) opens the editor, after asking for the reason.
+    if (askedOnOpen.current || params.get('edit') !== '1' || !canEdit) return;
+    askedOnOpen.current = true;
+    void enterEdit();
+  }, [params, canEdit, enterEdit]);
   const [tool, setTool] = useState<'draw' | 'pan'>('draw');
   // ?connector=<id> opens that connector (e.g. from the preview in a connection diagram).
   const linkedId = pcb.connectors.some((c) => c.id === params.get('connector')) ? params.get('connector') : null;
@@ -227,7 +247,10 @@ function PcbEditor({ pcb, projectId, types }: { pcb: PcbDetail; projectId: strin
   const [draft, setDraft] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
   const [creatingTypeFor, setCreatingTypeFor] = useState<string | null>(null);
 
-  const saver = useConnectorAutosave((id) => rectsRef.current.find((r) => r.id === id));
+  const saver = useConnectorAutosave(
+    (id) => rectsRef.current.find((r) => r.id === id),
+    () => changeIdRef.current,
+  );
   const pageNames = useMemo(() => rects.flatMap((r) => r.pins.map((p) => p.name)), [rects]);
   const pinNames = usePinNameSuggestions(pageNames);
 
@@ -332,7 +355,7 @@ function PcbEditor({ pcb, projectId, types }: { pcb: PcbDetail; projectId: strin
     setSelectedId(null);
     setPanelId(null);
     try {
-      await api.del(`/api/pcb-connectors/${id}`);
+      await api.del(`/api/pcb-connectors/${id}`, { changeId: changeIdRef.current });
     } catch (e) {
       alert(`Could not delete: ${errorMessage(e)}`);
     }
@@ -483,14 +506,16 @@ function PcbEditor({ pcb, projectId, types }: { pcb: PcbDetail; projectId: strin
               🔒 Locked
             </span>
           ) : (
-            <div className="seg">
-              <button className={mode === 'view' ? 'active' : ''} onClick={() => setMode('view')}>
-                View
-              </button>
-              <button className={mode === 'edit' ? 'active' : ''} onClick={() => setMode('edit')}>
-                Edit
-              </button>
-            </div>
+            canEdit && (
+              <div className="seg">
+                <button className={mode === 'view' ? 'active' : ''} onClick={() => setMode('view')}>
+                  View
+                </button>
+                <button className={mode === 'edit' ? 'active' : ''} onClick={() => void enterEdit()}>
+                  Edit
+                </button>
+              </div>
+            )
           )}
           {mode === 'edit' && (
             <div className="seg">
@@ -519,6 +544,11 @@ function PcbEditor({ pcb, projectId, types }: { pcb: PcbDetail; projectId: strin
           )}
         </div>
       </div>
+      {mode === 'edit' && edit.reason && (
+        <p className="edit-reason no-print" title="Recorded in the history with every change you make here">
+          ✎ Editing because: <em>{edit.reason}</em>
+        </p>
+      )}
       {mode === 'edit' && (
         <p className="hint no-print">
           {tool === 'draw'
@@ -658,7 +688,9 @@ function PcbEditor({ pcb, projectId, types }: { pcb: PcbDetail; projectId: strin
             <div className="panel">
               <h3>Connectors on this component</h3>
               {pcb.description && <p className="small muted">{pcb.description}</p>}
-              {rects.length === 0 && <p className="muted small">None yet. Switch to Edit and draw a rectangle on the photo.</p>}
+              {rects.length === 0 && (
+                <p className="muted small">{canEdit ? 'None yet. Switch to Edit and draw a rectangle on the photo.' : 'None yet.'}</p>
+              )}
               <ul className="conn-list">
                 {rects.map((r) => {
                   const t = types.find((x) => x.id === r.connectorTypeId);
@@ -681,6 +713,15 @@ function PcbEditor({ pcb, projectId, types }: { pcb: PcbDetail; projectId: strin
           )}
         </aside>
       </div>
+
+      <section className="panel no-print pcb-history">
+        <h3>Recent changes</h3>
+        <p className="small muted">This component is shared by every project it is placed in; changes show up in all of them.</p>
+        <HistoryList
+          filter={{ entityType: 'component', entityId: (frozen && pcb.sourceId) || pcb.id }}
+          projectId={projectId}
+        />
+      </section>
 
       {creatingTypeFor && (
         <ConnectorTypeForm

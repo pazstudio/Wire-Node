@@ -21,9 +21,10 @@ COPY --from=web /web/dist ./public
 ENV NODE_ENV=production \
     PORT=8080 \
     UPLOAD_DIR=/data/uploads \
+    BACKUP_DIR=/data/backups \
     PUBLIC_DIR=/app/public
 EXPOSE 8080
-VOLUME ["/data/uploads"]
+VOLUME ["/data/uploads", "/data/backups"]
 
 # Apply data-preserving upgrades, sync the database schema, then start the server.
 CMD ["sh", "-c", "npm run db:upgrade && npx prisma db push --skip-generate && npx tsx src/index.ts"]

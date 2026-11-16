@@ -10,6 +10,8 @@ import { zoneFlowNode, ZoneNode, type ZoneFlowNode } from '../components/zones';
 import { colorLabel } from '../colors';
 import { ProjectCrumb } from '../components/navigation';
 import { useRecordVisit } from '../recents';
+import { useCan } from '../auth';
+import { HistoryList } from '../components/history';
 
 const diagramNodeTypes = { ...nodeTypes, zone: ZoneNode };
 const isConnector = (n: ConnFlowNode | ZoneFlowNode): n is ConnFlowNode => n.type === 'connector';
@@ -31,6 +33,7 @@ export default function WiringDiagramPage() {
 
 function Diagram({ projectId, conn }: { projectId: string; conn: Connection }) {
   const locked = useLocked(projectId);
+  const canEdit = useCan('projects.edit');
   // Read-only nodes get pointer-events: none from React Flow; keep them hoverable for the picture preview.
   const [nodes, , onNodesChange] = useNodesState<ConnFlowNode | ZoneFlowNode>([
     ...(conn.zones ?? []).map((z) => zoneFlowNode(z, false)),
@@ -53,9 +56,11 @@ function Diagram({ projectId, conn }: { projectId: string; conn: Connection }) {
           {locked ? (
             <span className="badge badge-locked">🔒 Locked</span>
           ) : (
-            <Link className="btn btn-sm btn-primary" to={`/projects/${projectId}/connections/${conn.id}/edit`}>
-              Edit
-            </Link>
+            canEdit && (
+              <Link className="btn btn-sm btn-primary" to={`/projects/${projectId}/connections/${conn.id}/edit`}>
+                Edit
+              </Link>
+            )
           )}
           <button className="btn btn-sm" onClick={() => window.print()}>
             Print / PDF
@@ -129,6 +134,11 @@ function Diagram({ projectId, conn }: { projectId: string; conn: Connection }) {
             </tbody>
           </table>
         </div>
+      </section>
+
+      <section className="panel no-print">
+        <h3>Recent changes</h3>
+        <HistoryList filter={{ entityType: 'connection', entityId: conn.id }} />
       </section>
     </div>
   );

@@ -2,12 +2,15 @@ import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, errorMessage, type Cable } from '../../api';
 import { CableForm } from '../../components/forms';
+import { useCan } from '../../auth';
 import { Loading, Swatch } from '../../components/ui';
 
 export default function CablesTab() {
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ['cables'], queryFn: () => api.get<Cable[]>('/api/cables') });
   const [editing, setEditing] = useState<Cable | 'new' | null>(null);
+  const canEdit = useCan('library.edit');
+  const canDelete = useCan('library.delete');
 
   async function remove(c: Cable) {
     const used = c._count?.wires ?? 0;
@@ -29,7 +32,7 @@ export default function CablesTab() {
     <section>
       <div className="section-head">
         <p className="muted small">Cables are shared between all projects. Click a row to edit.</p>
-        <button className="btn btn-primary" onClick={() => setEditing('new')}>
+        <button className="btn btn-primary" onClick={() => setEditing('new')} hidden={!canEdit}>
           + New cable
         </button>
       </div>
@@ -51,7 +54,7 @@ export default function CablesTab() {
             </thead>
             <tbody>
               {q.data.map((c) => (
-                <tr key={c.id} onClick={() => setEditing(c)}>
+                <tr key={c.id} onClick={() => canEdit && setEditing(c)}>
                   <td>
                     <strong>{c.name}</strong>
                     {c.description && <div className="small muted">{c.description}</div>}
@@ -70,6 +73,7 @@ export default function CablesTab() {
                   <td>{c._count?.wires ?? 0} wires</td>
                   <td className="right">
                     <button
+                      hidden={!canDelete}
                       className="btn btn-sm btn-danger"
                       onClick={(e) => {
                         e.stopPropagation();

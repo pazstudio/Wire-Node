@@ -14,6 +14,10 @@ import cableRoutes from './routes/cables.js';
 import connectionRoutes from './routes/connections.js';
 import mapRoutes from './routes/map.js';
 import backupRoutes from './routes/backup.js';
+import adminRoutes from './routes/admin.js';
+import historyRoutes from './history.js';
+import backupStoreRoutes, { startBackupScheduler } from './backupStore.js';
+import { ensureAccounts, registerAuth } from './auth.js';
 
 const PORT = Number(process.env.PORT ?? 8080);
 const PUBLIC_DIR = path.resolve(process.env.PUBLIC_DIR ?? 'public');
@@ -37,6 +41,10 @@ app.setErrorHandler((err: any, req, reply) => {
 
 await app.register(multipart, { limits: { fileSize: 40 * 1024 * 1024, files: 1, fields: 30 } });
 
+// Every /api and /uploads request needs a signed-in account (see auth.ts). Registered before all
+// routes, on the root instance, so it covers every one of them.
+await registerAuth(app);
+
 // Uploaded images (file names are UUIDs and never reused, so they can be cached forever).
 await app.register(fastifyStatic, {
   root: UPLOAD_DIR,
@@ -55,6 +63,9 @@ await app.register(cableRoutes);
 await app.register(connectionRoutes);
 await app.register(mapRoutes);
 await app.register(backupRoutes);
+await app.register(backupStoreRoutes);
+await app.register(adminRoutes);
+await app.register(historyRoutes);
 
 // Built frontend (present in the Docker image; in development Vite serves it).
 const hasWeb = fs.existsSync(path.join(PUBLIC_DIR, 'index.html'));
@@ -70,6 +81,9 @@ app.setNotFoundHandler((req, reply) => {
   }
   return reply.code(404).send({ message: 'Not found' });
 });
+
+await ensureAccounts(app.log);
+startBackupScheduler(app.log);
 
 const linked = await linkLegacyNodes();
 if (linked) app.log.info(`Linked ${linked} connection node(s) to their component placement`);

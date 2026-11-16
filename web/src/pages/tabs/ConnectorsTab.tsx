@@ -2,12 +2,15 @@ import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, errorMessage, imgUrl, type ConnectorType } from '../../api';
 import { ConnectorTypeForm } from '../../components/forms';
+import { useCan } from '../../auth';
 import { Loading } from '../../components/ui';
 
 export default function ConnectorsTab() {
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ['connectorTypes'], queryFn: () => api.get<ConnectorType[]>('/api/connector-types') });
   const [editing, setEditing] = useState<ConnectorType | 'new' | null>(null);
+  const canEdit = useCan('library.edit');
+  const canDelete = useCan('library.delete');
 
   async function remove(t: ConnectorType) {
     const used = t._count?.instances ?? 0;
@@ -29,7 +32,7 @@ export default function ConnectorsTab() {
     <section>
       <div className="section-head">
         <p className="muted small">Connectors are shared between all projects. Click a row to edit.</p>
-        <button className="btn btn-primary" onClick={() => setEditing('new')}>
+        <button className="btn btn-primary" onClick={() => setEditing('new')} hidden={!canEdit}>
           + New connector
         </button>
       </div>
@@ -51,7 +54,7 @@ export default function ConnectorsTab() {
             </thead>
             <tbody>
               {q.data.map((t) => (
-                <tr key={t.id} onClick={() => setEditing(t)}>
+                <tr key={t.id} onClick={() => canEdit && setEditing(t)}>
                   <td className="thumb-cell">
                     {t.thumbPath ? <img src={imgUrl(t.thumbPath)} alt="" /> : <span className="thumb-empty" />}
                   </td>
@@ -64,6 +67,7 @@ export default function ConnectorsTab() {
                   <td>{t._count?.instances ?? 0}</td>
                   <td className="right">
                     <button
+                      hidden={!canDelete}
                       className="btn btn-sm btn-danger"
                       onClick={(e) => {
                         e.stopPropagation();

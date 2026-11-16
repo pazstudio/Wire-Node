@@ -3,6 +3,8 @@ import { z } from 'zod';
 import { prisma } from '../db.js';
 import { assertUnlocked } from '../freeze.js';
 import { folderInProject } from './projects.js';
+import { need } from '../auth.js';
+import { logChange, reasonOf, recordEdit, requireReason } from '../history.js';
 
 /** Board fields the diagram needs to show a picture of where a connector is. */
 export const pcbPreviewSelect = {
@@ -160,6 +162,7 @@ export default async function connectionRoutes(app: FastifyInstance) {
   );
 
   app.post<P>('/api/projects/:id/connections', async (req, reply) => {
+    const user = need(req, 'projects.edit');
     const data = CreateBody.parse(req.body);
     await assertUnlocked(req.params.id);
     if (data.folderId && !(await folderInProject(data.folderId, req.params.id, 'connections'))) {
@@ -167,13 +170,16 @@ export default async function connectionRoutes(app: FastifyInstance) {
     }
     const placementIds = await projectPlacementIds(req.params.id, data.placementIds);
     const conn = await prisma.connection.create({ data: { ...data, placementIds, projectId: req.params.id } });
+    await logChange(user, { projectId: conn.projectId, entityType: 'connection', entityId: conn.id, entityName: conn.name, action: 'create' });
     return reply.code(201).send(conn);
   });
 
   app.get<P>('/api/connections/:id', async (req) => getConnection(req.params.id));
 
-  // Saves the whole diagram (nodes + wires) as one document.
+  // Saves the whole diagram (nodes + wires) as one document. Recorded in the editing session named
+  // by the X-Change-Id header (see history.ts), or with a `reason` in the body.
   app.put<P>('/api/connections/:id', async (req, reply) => {
+    need(req, 'projects.edit');
     const b = SaveBody.parse(req.body);
     const id = req.params.id;
     const nodeIds = new Set(b.nodes.map((n) => n.id));
@@ -187,7 +193,7 @@ export default async function connectionRoutes(app: FastifyInstance) {
     const problem = await checkPlacements(conn.projectId, b.nodes);
     if (problem) return reply.code(400).send({ message: problem });
     const placementIds = b.placementIds ? await projectPlacementIds(conn.projectId, b.placementIds) : undefined;
-    await prisma.$transaction([
+    await recordEdit(req, 'connection', id, reasonOf(req), () => prisma.$transaction([
       prisma.connection.update({
         where: { id },
         data: {
@@ -219,12 +225,13 @@ export default async function connectionRoutes(app: FastifyInstance) {
           connectionId: id,
         })),
       }),
-    ]);
+    ]));
     return getConnection(id);
   });
 
   // Moves a connection into a folder (null = out of any folder) without touching the diagram.
   app.patch<P>('/api/connections/:id', async (req, reply) => {
+    need(req, 'projects.edit');
     const { folderId } = z.object({ folderId: z.string().nullable() }).parse(req.body);
     const conn = await prisma.connection.findUniqueOrThrow({ where: { id: req.params.id } });
     await assertUnlocked(conn.projectId);
@@ -235,9 +242,22 @@ export default async function connectionRoutes(app: FastifyInstance) {
     return { ok: true };
   });
 
+  // ?reason= is required.
   app.delete<P>('/api/connections/:id', async (req) => {
-    await assertUnlocked((await prisma.connection.findUniqueOrThrow({ where: { id: req.params.id } })).projectId);
-    await prisma.connection.delete({ where: { id: req.params.id } });
+    const user = need(req, 'connections.delete');
+    const reason = requireReason(req);
+    const conn = await prisma.connection.findUniqueOrThrow({ where: { id: req.params.id }, include: { _count: { select: { wires: true } } } });
+    await assertUnlocked(conn.projectId);
+    await prisma.connection.delete({ where: { id: conn.id } });
+    await logChange(user, {
+      projectId: conn.projectId,
+      entityType: 'connection',
+      entityId: conn.id,
+      entityName: conn.name,
+      action: 'delete',
+      reason,
+      summary: [`Deleted with ${conn._count.wires} wire(s)`],
+    });
     return { ok: true };
   });
 }

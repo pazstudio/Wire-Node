@@ -3,7 +3,9 @@ import { z } from 'zod';
 import { prisma } from '../db.js';
 import { assertNotFrozen, assertUnlocked } from '../freeze.js';
 import { deleteFiles, readMultipart, saveImage } from '../storage.js';
-import { assertComponentFolder, assertPlacementNameFree, PlacementNameField, placePcb } from './projects.js';
+import { assertComponentFolder, assertPlacementNameFree, logPlacement, PlacementNameField, placePcb } from './projects.js';
+import { need } from '../auth.js';
+import { logChange, recordEdit, requireReason } from '../history.js';
 
 const PcbFields = z.object({
   name: z.string().trim().min(1, 'Name is required'),
@@ -57,7 +59,9 @@ export default async function pcbRoutes(app: FastifyInstance) {
   );
 
   app.post('/api/pcbs', async (req, reply) => {
+    const user = need(req, 'library.edit');
     const { fields, file } = await readMultipart(req);
+    if (fields.projectId) need(req, 'projects.edit');
     const meta = PcbFields.parse(fields);
     const placementName = PlacementNameField.parse(fields.placementName ?? '');
     if (!file) return reply.code(400).send({ message: 'A picture of the component is required' });
@@ -79,7 +83,11 @@ export default async function pcbRoutes(app: FastifyInstance) {
         imageHeight: img.height,
       },
     });
-    if (fields.projectId) await placePcb(fields.projectId, pcb.id, placementName, fields.folderId || null);
+    await logChange(user, { entityType: 'component', entityId: pcb.id, entityName: pcb.name, action: 'create' });
+    if (fields.projectId) {
+      const placement = await placePcb(fields.projectId, pcb.id, placementName, fields.folderId || null);
+      await logPlacement(user, placement.id, 'place');
+    }
     return reply.code(201).send(pcb);
   });
 
@@ -93,36 +101,56 @@ export default async function pcbRoutes(app: FastifyInstance) {
     }),
   );
 
+  // Name, description, picture. Needs a `reason` field (or the X-Change-Id of an editing session).
   app.put<P>('/api/pcbs/:id', async (req) => {
+    need(req, 'library.edit');
     const existing = await prisma.pcb.findUniqueOrThrow({ where: { id: req.params.id } });
     assertNotFrozen(existing);
     const { fields, file } = await readMultipart(req);
     const meta = PcbFields.parse(fields);
     await assertLibraryNameFree(meta.name, existing.id);
-    const img = file ? await saveImage(file) : null;
-    const pcb = await prisma.pcb.update({
-      where: { id: existing.id },
-      data: {
-        name: meta.name,
-        description: meta.description,
-        ...(img
-          ? { imagePath: img.imagePath, thumbPath: img.thumbPath, imageWidth: img.width, imageHeight: img.height }
-          : {}),
-      },
+    if (!req.headers['x-change-id']) requireReason(req, fields.reason);
+    return recordEdit(req, 'component', existing.id, fields.reason, async () => {
+      const img = file ? await saveImage(file) : null;
+      const pcb = await prisma.pcb.update({
+        where: { id: existing.id },
+        data: {
+          name: meta.name,
+          description: meta.description,
+          ...(img
+            ? { imagePath: img.imagePath, thumbPath: img.thumbPath, imageWidth: img.width, imageHeight: img.height }
+            : {}),
+        },
+      });
+      if (img) await deleteFiles(existing.imagePath, existing.thumbPath);
+      return pcb;
     });
-    if (img) await deleteFiles(existing.imagePath, existing.thumbPath);
-    return pcb;
   });
 
   // Deletes the component from the library and every project. The client must send the phrase the
-  // user typed, so a stray request cannot do it by accident.
+  // user typed, so a stray request cannot do it by accident, and a ?reason=.
   app.delete<P & { Querystring: { confirm?: string } }>('/api/pcbs/:id', async (req, reply) => {
+    const user = need(req, 'library.delete');
     if (req.query.confirm !== 'permanentlydeletefromallprojects') {
       return reply.code(400).send({ message: 'Type "permanentlydeletefromallprojects" to delete a component from all projects' });
     }
+    const reason = requireReason(req);
     assertNotFrozen(await prisma.pcb.findUniqueOrThrow({ where: { id: req.params.id } }));
+    const projects = await prisma.projectPcb.findMany({
+      where: { pcbId: req.params.id },
+      select: { project: { select: { name: true } } },
+      distinct: ['projectId'],
+    });
     const pcb = await prisma.pcb.delete({ where: { id: req.params.id } });
     await deleteFiles(pcb.imagePath, pcb.thumbPath);
+    await logChange(user, {
+      entityType: 'component',
+      entityId: pcb.id,
+      entityName: pcb.name,
+      action: 'delete',
+      reason,
+      summary: projects.length ? [`Deleted from the library and from: ${projects.map((p) => p.project.name).join(', ')}`] : ['Deleted from the library'],
+    });
     return { ok: true };
   });
 
@@ -144,24 +172,35 @@ export default async function pcbRoutes(app: FastifyInstance) {
   });
 
   // ----- Connectors drawn on a PCB (autosaved by the editor via idempotent upsert) -----
+  // Recorded in the editing session named by the X-Change-Id header (see history.ts).
   app.put<P>('/api/pcb-connectors/:id', async (req) => {
+    need(req, 'library.edit');
     const b = ConnectorBody.parse(req.body);
     const existing = await prisma.pcbConnector.findUnique({ where: { id: req.params.id }, include: { pcb: true } });
     if (existing) assertNotFrozen(existing.pcb);
+    if (existing && existing.pcbId !== b.pcbId) {
+      throw Object.assign(new Error('A connector cannot be moved to another component'), { statusCode: 400 });
+    }
     assertNotFrozen(await prisma.pcb.findUniqueOrThrow({ where: { id: b.pcbId } }));
     const data = { ...b, connectorTypeId: b.connectorTypeId ?? null };
-    return prisma.pcbConnector.upsert({
-      where: { id: req.params.id },
-      create: { id: req.params.id, ...data },
-      update: data,
-      include: { connectorType: true },
-    });
+    return recordEdit(req, 'component', b.pcbId, undefined, () =>
+      prisma.pcbConnector.upsert({
+        where: { id: req.params.id },
+        create: { id: req.params.id, ...data },
+        update: data,
+        include: { connectorType: true },
+      }),
+    );
   });
 
   app.delete<P>('/api/pcb-connectors/:id', async (req) => {
+    need(req, 'library.edit');
     const existing = await prisma.pcbConnector.findUnique({ where: { id: req.params.id }, include: { pcb: true } });
-    if (existing) assertNotFrozen(existing.pcb);
-    await prisma.pcbConnector.deleteMany({ where: { id: req.params.id } });
+    if (!existing) return { ok: true };
+    assertNotFrozen(existing.pcb);
+    await recordEdit(req, 'component', existing.pcbId, undefined, () =>
+      prisma.pcbConnector.deleteMany({ where: { id: req.params.id } }),
+    );
     return { ok: true };
   });
 

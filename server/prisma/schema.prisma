@@ -244,3 +244,90 @@ model Zone {
   h         Float
   project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 }
+
+// ---------------------------------------------------------------------------------------------
+// Accounts. There is no self-registration: accounts are made in the admin panel by someone with
+// the users.manage permission. On first start (no accounts at all) the server creates admin/admin,
+// which has to choose a new password before it can do anything else.
+// ---------------------------------------------------------------------------------------------
+
+/// A permission set, e.g. "Admin", "Editor", "Member". Every user is in exactly one group.
+model Group {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String   @default("")
+  /// The admin group has every permission and cannot be deleted or restricted.
+  isAdmin     Boolean  @default(false)
+  /// Permission keys, see PERMISSIONS in auth.ts.
+  permissions String[] @default([])
+  createdAt   DateTime @default(now())
+  users       User[]
+}
+
+model User {
+  id                 String      @id @default(uuid())
+  /// Lower case, used to sign in.
+  username           String      @unique
+  displayName        String      @default("")
+  /// scrypt$<salt>$<hash>, see hashPassword in auth.ts.
+  passwordHash       String
+  groupId            String
+  disabled           Boolean     @default(false)
+  /// Set for a new account, a password reset by an admin, and the first-start admin/admin account.
+  mustChangePassword Boolean     @default(false)
+  createdAt          DateTime    @default(now())
+  lastLoginAt        DateTime?
+  group              Group       @relation(fields: [groupId], references: [id])
+  sessions           Session[]
+  changes            ChangeLog[]
+}
+
+/// A signed-in browser. The cookie holds a random token; only its SHA-256 is stored.
+model Session {
+  id         String   @id
+  userId     String
+  createdAt  DateTime @default(now())
+  expiresAt  DateTime
+  lastSeenAt DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+/// One entry in the "recent changes" history: who changed what, why, and a readable list of
+/// what changed. An editing session (all autosaves between opening an editor and leaving it) is
+/// one entry; its summary is recomputed from the `before` snapshot on every save.
+model ChangeLog {
+  id         String   @id @default(uuid())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  /// Null once the account is deleted; userName keeps who it was.
+  userId     String?
+  userName   String
+  /// Project the change belongs to (null for library components). Not a foreign key, so the
+  /// history of a deleted project stays readable in the admin panel.
+  projectId  String?
+  /// "connection", "component" or "project".
+  entityType String
+  entityId   String
+  /// Name of the item when the change was made (it may be renamed or deleted later).
+  entityName String
+  /// "create", "edit", "delete", "lock", "unlock", "place", "remove".
+  action     String
+  reason     String   @default("")
+  summary    String[] @default([])
+  /// Snapshot taken when an editing session started (see history.ts); null for one-off actions.
+  before     Json?
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([entityType, entityId, updatedAt])
+  @@index([projectId, updatedAt])
+  @@index([updatedAt])
+}
+
+/// Server settings edited in the admin panel, e.g. "backup" = { enabled, intervalHours, keep }.
+model Setting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+}

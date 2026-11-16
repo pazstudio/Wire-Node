@@ -1,7 +1,9 @@
 import { useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { api, errorMessage, imgUrl, type Folder, type Pcb, type Placement } from '../../api';
+import { api, errorMessage, imgUrl, withReason, type Folder, type Pcb, type Placement } from '../../api';
+import { useCan } from '../../auth';
+import { useAskReason } from '../../components/reason';
 import {
   FolderField,
   FolderModal,
@@ -31,11 +33,15 @@ export default function PcbsTab({ projectId, locked }: { projectId: string; lock
   const foldersQ = useFolders(projectId, 'components');
   const [folderForm, setFolderForm] = useState<Folder | 'new' | null>(null);
   const [deleting, setDeleting] = useState<Pcb | null>(null);
+  const ask = useAskReason();
+  const canEditProject = useCan('projects.edit') && !locked;
+  const canEditLibrary = useCan('library.edit');
+  const canDeleteLibrary = useCan('library.delete');
   const collapsed = useCollapsed();
   const dnd = useFolderDnd('components', (id, folderId) => {
     const p = q.data?.find((x) => x.id === id);
     if (p) moveTo(p, folderId);
-  }, !locked);
+  }, canEditProject);
 
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ['projectPcbs', projectId] });
@@ -48,12 +54,25 @@ export default function PcbsTab({ projectId, locked }: { projectId: string; lock
   async function detach(p: Placement) {
     try {
       const usage = await api.get<{ connections: { name: string }[] }>(`/api/project-pcbs/${p.id}/usage`);
-      const lines = [`Remove "${p.name}" from this project? The component stays in the shared library.`];
-      if (usage.connections.length)
-        lines.push(`Its connectors and their wires will be removed from: ${usage.connections.map((x) => x.name).join(', ')}`);
-      if (!confirm(lines.join('\n\n'))) return;
-      await api.del(`/api/project-pcbs/${p.id}`);
-      refresh();
+      await ask({
+        title: `Remove "${p.name}" from this project`,
+        message: (
+          <>
+            <p>The component stays in the shared library.</p>
+            {usage.connections.length > 0 && (
+              <p className="error small">
+                Its connectors and their wires will be removed from: {usage.connections.map((x) => x.name).join(', ')}
+              </p>
+            )}
+          </>
+        ),
+        confirmLabel: 'Remove from project',
+        danger: true,
+        action: async (reason) => {
+          await api.del(withReason(`/api/project-pcbs/${p.id}`, reason));
+          refresh();
+        },
+      });
     } catch (e) {
       alert(errorMessage(e));
     }
@@ -93,22 +112,30 @@ export default function PcbsTab({ projectId, locked }: { projectId: string; lock
         {p.pcb.description && <p className="small">{p.pcb.description}</p>}
         <div className="small muted">{p.pcb._count?.connectors ?? 0} connectors drawn</div>
       </Link>
-      {!locked && (
+      {!locked && (canEditProject || canEditLibrary || canDeleteLibrary) && (
         <div className="card-actions">
-          <button className="btn btn-sm" onClick={() => setEditing(p)}>
-            Edit
-          </button>
-          <button className="btn btn-sm" onClick={() => setPicking({ pcb: p.pcb, folderId: p.folderId })}
-            title="Add this component again under another name">
-            Add another
-          </button>
-          <button className="btn btn-sm" onClick={() => detach(p)}>
-            Remove from project
-          </button>
-          <button className="btn btn-sm btn-danger" onClick={() => setDeleting(p.pcb)}>
-            Delete
-          </button>
-          {folders.length > 0 && (
+          {canEditLibrary && (
+            <button className="btn btn-sm" onClick={() => setEditing(p)}>
+              Edit
+            </button>
+          )}
+          {canEditProject && (
+            <>
+              <button className="btn btn-sm" onClick={() => setPicking({ pcb: p.pcb, folderId: p.folderId })}
+                title="Add this component again under another name">
+                Add another
+              </button>
+              <button className="btn btn-sm" onClick={() => detach(p)}>
+                Remove from project
+              </button>
+            </>
+          )}
+          {canDeleteLibrary && (
+            <button className="btn btn-sm btn-danger" onClick={() => setDeleting(p.pcb)}>
+              Delete
+            </button>
+          )}
+          {canEditProject && folders.length > 0 && (
             <FolderSelect folders={folders} value={p.folderId} onChange={(f) => moveTo(p, f)} label={`Folder of ${p.name}`} />
           )}
         </div>
@@ -124,7 +151,7 @@ export default function PcbsTab({ projectId, locked }: { projectId: string; lock
           under different names, e.g. "Main board - Master" and "Main board - Slave". Sort them into folders by machine
           part: drag a card onto a folder.
         </p>
-        {!locked && (
+        {canEditProject && (
           <div className="btn-row">
             <button className="btn" onClick={() => setFolderForm('new')}>
               + New folder
@@ -132,9 +159,11 @@ export default function PcbsTab({ projectId, locked }: { projectId: string; lock
             <button className="btn" onClick={() => setPicking({ pcb: null, folderId: null })}>
               Add existing component
             </button>
-            <button className="btn btn-primary" onClick={() => setEditing('new')}>
-              + Upload component
-            </button>
+            {canEditLibrary && (
+              <button className="btn btn-primary" onClick={() => setEditing('new')}>
+                + Upload component
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -153,7 +182,7 @@ export default function PcbsTab({ projectId, locked }: { projectId: string; lock
             onToggle={() => collapsed.toggle(f.id)}
             onRename={() => setFolderForm(f)}
             onDelete={() => removeFolder(f, items.length)}
-            readOnly={locked}
+            readOnly={!canEditProject}
             emptyText="Empty. Drag components here, or choose this folder on a component card."
           >
             <div className="card-grid">{items.map(card)}</div>
@@ -236,9 +265,10 @@ function DeletePcbModal({ pcb, onClose, onDeleted }: { pcb: Pcb; onClose: () => 
     gcTime: 0,
   });
   const [typed, setTyped] = useState('');
+  const [reason, setReason] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const confirmed = typed.trim() === DELETE_PHRASE;
+  const confirmed = typed.trim() === DELETE_PHRASE && reason.trim().length >= 3;
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -246,7 +276,7 @@ function DeletePcbModal({ pcb, onClose, onDeleted }: { pcb: Pcb; onClose: () => 
     setBusy(true);
     setError(null);
     try {
-      await api.del(`/api/pcbs/${pcb.id}?confirm=${DELETE_PHRASE}`);
+      await api.del(withReason(`/api/pcbs/${pcb.id}?confirm=${DELETE_PHRASE}`, reason.trim()));
       onDeleted();
     } catch (err) {
       setError(errorMessage(err));
@@ -273,6 +303,17 @@ function DeletePcbModal({ pcb, onClose, onDeleted }: { pcb: Pcb; onClose: () => 
             Wires in these connections will be removed: {usage.connections.map((x) => x.name).join(', ')}
           </p>
         )}
+        <label>
+          Reason for deleting it
+          <textarea
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            rows={2}
+            maxLength={1000}
+            placeholder="e.g. Replaced by the Rev C board in every machine"
+          />
+          <span className="hint">Kept in the history together with your name.</span>
+        </label>
         <label>
           Type <code>{DELETE_PHRASE}</code> to confirm
           <input

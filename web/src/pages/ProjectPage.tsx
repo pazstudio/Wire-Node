@@ -8,6 +8,7 @@ import ConnectorsTab from './tabs/ConnectorsTab';
 import ConnectionsTab from './tabs/ConnectionsTab';
 import SearchTab from './tabs/SearchTab';
 import { RecentStrip } from '../components/navigation';
+import { HistoryList } from '../components/history';
 
 const TABS = [
   { key: 'pcbs', label: 'Components' },
@@ -15,6 +16,7 @@ const TABS = [
   { key: 'connectors', label: 'Connectors' },
   { key: 'connections', label: 'Connections' },
   { key: 'search', label: 'Search' },
+  { key: 'history', label: 'History' },
 ] as const;
 
 export default function ProjectPage() {
@@ -64,6 +66,15 @@ export default function ProjectPage() {
       {tab === 'connectors' && <ConnectorsTab />}
       {tab === 'connections' && <ConnectionsTab projectId={pid} locked={locked} />}
       {tab === 'search' && <SearchTab projectId={pid} />}
+      {tab === 'history' && (
+        <div className="panel">
+          <h3>Recent changes</h3>
+          <p className="small muted">
+            Changes to this project's connections, and to the library components placed in it, with who made them and why.
+          </p>
+          <HistoryList filter={{ projectId: pid }} projectId={pid} showEntity />
+        </div>
+      )}
     </div>
   );
 }

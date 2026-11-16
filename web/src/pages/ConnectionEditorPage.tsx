@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, Navigate, useParams } from 'react-router-dom';
+import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Background,
@@ -38,6 +38,8 @@ import {
   type ConnFlowNode,
 } from '../components/flow';
 import { useProject } from '../components/lock';
+import { useEditSession } from '../components/reason';
+import { useCan } from '../auth';
 import { PlacementPicker } from '../components/placements';
 import {
   boxSelectProps,
@@ -81,7 +83,9 @@ export default function ConnectionEditorPage() {
   const typesQ = useQuery({ queryKey: ['connectorTypes'], queryFn: () => api.get<ConnectorType[]>('/api/connector-types') });
   const cablesQ = useQuery({ queryKey: ['cables'], queryFn: () => api.get<Cable[]>('/api/cables') });
   const projectQ = useProject(pid);
+  const canEdit = useCan('projects.edit');
 
+  if (!canEdit) return <Navigate to={`/projects/${pid}/connections/${cid}`} replace />;
   if (!connQ.data || !availQ.data || !placementsQ.data || !typesQ.data || !cablesQ.data || !projectQ.data)
     return (
       <Loading error={connQ.error || availQ.error || placementsQ.error || typesQ.error || cablesQ.error || projectQ.error} />
@@ -90,18 +94,47 @@ export default function ConnectionEditorPage() {
   if (projectQ.data.lockedAt) return <Navigate to={`/projects/${pid}/connections/${cid}`} replace />;
 
   return (
-    <ReactFlowProvider>
-      <Editor
-        key={connQ.data.id}
-        projectId={pid}
-        conn={connQ.data}
-        available={availQ.data}
-        placements={placementsQ.data}
-        types={typesQ.data}
-        cables={cablesQ.data}
-      />
-    </ReactFlowProvider>
+    <ReasonGate key={connQ.data.id} projectId={pid} conn={connQ.data}>
+      {(session) => (
+        <ReactFlowProvider>
+          <Editor
+            projectId={pid}
+            conn={connQ.data!}
+            available={availQ.data!}
+            placements={placementsQ.data!}
+            types={typesQ.data!}
+            cables={cablesQ.data!}
+            session={session}
+          />
+        </ReactFlowProvider>
+      )}
+    </ReasonGate>
   );
+}
+
+type Session = { id: string; reason: string };
+
+/**
+ * Asks why the connection is being edited before the editor opens; every autosave until the editor
+ * is left is recorded as one change with that reason. Cancelling goes back to the wiring diagram.
+ */
+function ReasonGate({ projectId, conn, children }: { projectId: string; conn: Connection; children: (s: Session) => JSX.Element }) {
+  const navigate = useNavigate();
+  const edit = useEditSession('connection', conn.id, conn.name);
+  const [session, setSession] = useState<Session | null>(null);
+  const asked = useRef(false);
+
+  useEffect(() => {
+    if (asked.current) return;
+    asked.current = true;
+    void edit.start().then((s) => {
+      if (s) setSession(s);
+      else navigate(`/projects/${projectId}/connections/${conn.id}`, { replace: true });
+    });
+  }, [edit, navigate, projectId, conn.id]);
+
+  if (!session) return <p className="page muted">Waiting for the reason of this change…</p>;
+  return children(session);
 }
 
 function Editor({
@@ -111,6 +144,7 @@ function Editor({
   placements,
   types,
   cables,
+  session,
 }: {
   projectId: string;
   conn: Connection;
@@ -118,6 +152,8 @@ function Editor({
   placements: Placement[];
   types: ConnectorType[];
   cables: Cable[];
+  /** Editing session every save is recorded in. */
+  session: Session;
 }) {
   const qc = useQueryClient();
   const rf = useReactFlow();
@@ -199,7 +235,7 @@ function Editor({
             y: n.position.y,
           })),
           wires: wiresRef.current,
-        });
+        }, { changeId: session.id });
         if (!pending.current) setStatus('saved');
         setSaveError(null);
         qc.invalidateQueries({ queryKey: ['connections', projectId] });
@@ -209,7 +245,7 @@ function Editor({
         setSaveError(errorMessage(e));
       }
     });
-  }, [conn.id, projectId, qc]);
+  }, [conn.id, projectId, qc, session.id]);
 
   useEffect(() => {
     if (dirty === 0) return;
@@ -472,6 +508,9 @@ function Editor({
           View wiring diagram
         </Link>
       </div>
+      <p className="edit-reason no-print" title="Recorded in the history with every change you make here">
+        ✎ Editing because: <em>{session.reason}</em>
+      </p>
       {saveError && <p className="error">{saveError}</p>}
 
       <div className="editor-layout">

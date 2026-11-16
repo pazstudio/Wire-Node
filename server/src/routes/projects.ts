@@ -3,6 +3,8 @@ import { z } from 'zod';
 import { prisma } from '../db.js';
 import { assertUnlocked, duplicateProject, lockProject, unlockProject } from '../freeze.js';
 import { pcbPreviewSelect } from './connections.js';
+import { need, type AuthUser } from '../auth.js';
+import { logChange, requireReason } from '../history.js';
 
 const ProjectBody = z.object({
   name: z.string().trim().min(1, 'Name is required'),
@@ -80,6 +82,26 @@ export async function listPlacements(projectId: string) {
     .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
 }
 
+/** Records that a component was placed in (or removed from) a project, in the history of both. */
+export async function logPlacement(user: AuthUser, placementId: string, action: 'place' | 'remove', reason = '') {
+  const pl = await prisma.projectPcb.findUniqueOrThrow({
+    where: { id: placementId },
+    include: { pcb: { select: { id: true, name: true, sourceId: true, frozenInProjectId: true } }, project: { select: { name: true } } },
+  });
+  const name = placementName(pl);
+  const as = name !== pl.pcb.name ? ` as "${name}"` : '';
+  await logChange(user, {
+    projectId: pl.projectId,
+    entityType: 'component',
+    // A frozen copy is recorded under the library component it was copied from.
+    entityId: (pl.pcb.frozenInProjectId && pl.pcb.sourceId) || pl.pcb.id,
+    entityName: pl.pcb.name,
+    action,
+    reason,
+    summary: [action === 'place' ? `Placed in "${pl.project.name}"${as}` : `Removed "${name}" from "${pl.project.name}"`],
+  });
+}
+
 export default async function projectRoutes(app: FastifyInstance) {
   app.get('/api/projects', async () =>
     prisma.project.findMany({
@@ -89,7 +111,9 @@ export default async function projectRoutes(app: FastifyInstance) {
   );
 
   app.post('/api/projects', async (req, reply) => {
+    const user = need(req, 'projects.create');
     const project = await prisma.project.create({ data: ProjectBody.parse(req.body) });
+    await logChange(user, { projectId: project.id, entityType: 'project', entityId: project.id, entityName: project.name, action: 'create' });
     return reply.code(201).send(project);
   });
 
@@ -97,23 +121,58 @@ export default async function projectRoutes(app: FastifyInstance) {
     prisma.project.findUniqueOrThrow({ where: { id: req.params.id } }),
   );
 
-  app.put<P>('/api/projects/:id', async (req) =>
-    prisma.project.update({ where: { id: req.params.id }, data: ProjectBody.parse(req.body) }),
-  );
+  app.put<P>('/api/projects/:id', async (req) => {
+    need(req, 'projects.edit');
+    return prisma.project.update({ where: { id: req.params.id }, data: ProjectBody.parse(req.body) });
+  });
 
   // Copies the project with everything it owns, e.g. to start a new revision of a machine.
   // Library components, connectors and cables are shared, so the copy uses the same ones.
-  app.post<P>('/api/projects/:id/duplicate', async (req, reply) =>
-    reply.code(201).send(await duplicateProject(req.params.id, ProjectBody.parse(req.body))),
-  );
+  app.post<P>('/api/projects/:id/duplicate', async (req, reply) => {
+    const user = need(req, 'projects.create');
+    const src = await prisma.project.findUniqueOrThrow({ where: { id: req.params.id } });
+    const copy = await duplicateProject(src.id, ProjectBody.parse(req.body));
+    await logChange(user, {
+      projectId: copy.id,
+      entityType: 'project',
+      entityId: copy.id,
+      entityName: copy.name,
+      action: 'create',
+      summary: [`Duplicated from "${src.name}"`],
+    });
+    return reply.code(201).send(copy);
+  });
 
   // A locked project (e.g. the device shipped) cannot be changed and keeps its own copies of what it uses.
-  app.post<P>('/api/projects/:id/lock', async (req) => lockProject(req.params.id));
-  app.post<P>('/api/projects/:id/unlock', async (req) => unlockProject(req.params.id));
+  // Both need a reason, which is kept in the project's history.
+  app.post<P>('/api/projects/:id/lock', async (req) => {
+    const user = need(req, 'projects.lock');
+    const reason = requireReason(req);
+    const before = await prisma.project.findUniqueOrThrow({ where: { id: req.params.id } });
+    const project = await lockProject(req.params.id);
+    if (!before.lockedAt) {
+      await logChange(user, { projectId: project.id, entityType: 'project', entityId: project.id, entityName: project.name, action: 'lock', reason });
+    }
+    return project;
+  });
+  app.post<P>('/api/projects/:id/unlock', async (req) => {
+    const user = need(req, 'projects.unlock');
+    const reason = requireReason(req);
+    const before = await prisma.project.findUniqueOrThrow({ where: { id: req.params.id } });
+    const project = await unlockProject(req.params.id);
+    if (before.lockedAt) {
+      await logChange(user, { projectId: project.id, entityType: 'project', entityId: project.id, entityName: project.name, action: 'unlock', reason });
+    }
+    return project;
+  });
 
+  // ?reason= is required and kept in the history (shown in the admin panel's activity list).
   app.delete<P>('/api/projects/:id', async (req) => {
+    const user = need(req, 'projects.delete');
+    const reason = requireReason(req);
     await assertUnlocked(req.params.id);
-    await prisma.project.delete({ where: { id: req.params.id } });
+    const project = await prisma.project.delete({ where: { id: req.params.id } });
+    await logChange(user, { projectId: project.id, entityType: 'project', entityId: project.id, entityName: project.name, action: 'delete', reason });
     return { ok: true };
   });
 
@@ -121,14 +180,18 @@ export default async function projectRoutes(app: FastifyInstance) {
   app.get<P>('/api/projects/:id/pcbs', async (req) => listPlacements(req.params.id));
 
   app.post<P>('/api/projects/:id/pcbs', async (req, reply) => {
+    const user = need(req, 'projects.edit');
     const { pcbId, name, folderId } = z
       .object({ pcbId: z.string().min(1), name: PlacementNameField, folderId: z.string().nullable().default(null) })
       .parse(req.body);
     await prisma.project.findUniqueOrThrow({ where: { id: req.params.id } });
-    return reply.code(201).send(await placePcb(req.params.id, pcbId, name, folderId));
+    const placement = await placePcb(req.params.id, pcbId, name, folderId);
+    await logPlacement(user, placement.id, 'place');
+    return reply.code(201).send(placement);
   });
 
   app.patch<P>('/api/project-pcbs/:id', async (req, reply) => {
+    need(req, 'projects.edit');
     const data = z
       .object({ mapX: z.number(), mapY: z.number(), name: PlacementNameField, folderId: z.string().nullable() })
       .partial()
@@ -144,9 +207,14 @@ export default async function projectRoutes(app: FastifyInstance) {
   });
 
   // Removing a placement also removes its connectors (and their wires) from the project's connections.
+  // ?reason= is required.
   app.delete<P>('/api/project-pcbs/:id', async (req) => {
+    const user = need(req, 'projects.edit');
     const existing = await prisma.projectPcb.findUnique({ where: { id: req.params.id } });
-    if (existing) await assertUnlocked(existing.projectId);
+    if (!existing) return { ok: true };
+    const reason = requireReason(req);
+    await assertUnlocked(existing.projectId);
+    await logPlacement(user, existing.id, 'remove', reason);
     await prisma.projectPcb.deleteMany({ where: { id: req.params.id } });
     return { ok: true };
   });
@@ -160,12 +228,14 @@ export default async function projectRoutes(app: FastifyInstance) {
   });
 
   app.post<P>('/api/projects/:id/folders', async (req, reply) => {
+    need(req, 'projects.edit');
     const { name, kind } = FolderBody.extend({ kind: FolderKind.default('components') }).parse(req.body);
     await assertUnlocked(req.params.id);
     return reply.code(201).send(await prisma.folder.create({ data: { name, kind, projectId: req.params.id } }));
   });
 
   app.patch<P>('/api/folders/:id', async (req) => {
+    need(req, 'projects.edit');
     const folder = await prisma.folder.findUniqueOrThrow({ where: { id: req.params.id } });
     await assertUnlocked(folder.projectId);
     return prisma.folder.update({ where: { id: folder.id }, data: FolderBody.parse(req.body) });
@@ -173,6 +243,7 @@ export default async function projectRoutes(app: FastifyInstance) {
 
   // What was in the folder stays in the project, outside any folder.
   app.delete<P>('/api/folders/:id', async (req) => {
+    need(req, 'projects.edit');
     const folder = await prisma.folder.findUnique({ where: { id: req.params.id } });
     if (folder) await assertUnlocked(folder.projectId);
     await prisma.folder.deleteMany({ where: { id: req.params.id } });
