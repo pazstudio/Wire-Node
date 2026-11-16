@@ -7,7 +7,6 @@ import CablesTab from './tabs/CablesTab';
 import ConnectorsTab from './tabs/ConnectorsTab';
 import ConnectionsTab from './tabs/ConnectionsTab';
 import SearchTab from './tabs/SearchTab';
-import { RecentStrip } from '../components/navigation';
 import { HistoryList } from '../components/history';
 
 const TABS = [
@@ -49,7 +48,6 @@ export default function ProjectPage() {
       </div>
       <LockBanner project={project} />
       <WiringExportNotice projectId={pid} />
-      <RecentStrip projectId={pid} />
       <nav className="tabs">
         {TABS.map((t) => (
           <button

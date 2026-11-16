@@ -434,22 +434,84 @@ function ProjectMenuInner({ projectId }: { projectId: string }) {
 
 // ---------- Project page / breadcrumbs ----------
 
-/** "Recent: ▣ Duet 6HC  ⇄ Toolhead harness …" above the project tabs. */
-export function RecentStrip({ projectId }: { projectId: string }) {
+const DRAWER_KEY = 'wn.recentDrawerOpen';
+
+function readDrawerOpen(): boolean {
+  try {
+    return localStorage.getItem(DRAWER_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Collapsible "Recent" drawer on the left edge of every project page. Collapsed it is a
+ * small vertical tab; expanded it lists recently visited components and connections.
+ */
+export function RecentDrawer() {
+  const projectId = useCurrentProjectId();
   const recents = useResolvedRecents(projectId);
-  if (!recents.length) return null;
+  const location = useLocation();
+  const [open, setOpen] = useState(readDrawerOpen);
+
+  const toggle = (next: boolean) => {
+    setOpen(next);
+    try {
+      localStorage.setItem(DRAWER_KEY, next ? '1' : '0');
+    } catch {
+      /* ignore */
+    }
+  };
+
+  if (!projectId || !recents.length) return null;
+  const here = location.pathname;
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        className="recent-drawer-tab no-print"
+        onClick={() => toggle(true)}
+        title="Show recently opened components and connections"
+        aria-expanded={false}
+      >
+        <span aria-hidden>◷</span>
+        <span className="recent-drawer-tab-text">Recent</span>
+      </button>
+    );
+  }
+
   return (
-    <div className="recent-strip no-print">
-      <span className="recent-label">Recent</span>
-      {recents.slice(0, 8).map((r) => (
-        <Link key={r.key} to={r.to} className="recent-chip" title={`Open ${KIND_LABEL[r.kind]} "${r.title}"`}>
-          <span aria-hidden className="recent-icon">
-            {KIND_ICON[r.kind]}
-          </span>
-          {r.title}
-        </Link>
-      ))}
-    </div>
+    <aside className="recent-drawer no-print" aria-label="Recently opened">
+      <div className="recent-drawer-head">
+        <span>Recent</span>
+        <button
+          type="button"
+          className="recent-drawer-close"
+          onClick={() => toggle(false)}
+          title="Hide recents"
+          aria-expanded
+        >
+          «
+        </button>
+      </div>
+      <ul className="recent-drawer-list">
+        {recents.slice(0, 15).map((r) => (
+          <li key={r.key}>
+            <Link
+              to={r.to}
+              className={`recent-drawer-item ${here === r.to ? 'active' : ''}`}
+              title={`Open ${KIND_LABEL[r.kind]} "${r.title}"`}
+            >
+              <span aria-hidden className="recent-icon">
+                {KIND_ICON[r.kind]}
+              </span>
+              <span className="recent-drawer-title">{r.title}</span>
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </aside>
   );
 }
 

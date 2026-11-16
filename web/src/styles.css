@@ -1231,39 +1231,107 @@ td.center {
   margin-right: 2px;
 }
 
-.recent-strip {
+/* Recent drawer on the left edge of project pages */
+.recent-drawer-tab {
+  position: fixed;
+  left: 0;
+  top: 120px;
+  z-index: 40;
   display: flex;
+  flex-direction: column;
   align-items: center;
   gap: 6px;
-  margin: 12px 0 4px;
-  overflow-x: auto;
-  scrollbar-width: thin;
-}
-.recent-label {
+  padding: 10px 5px;
+  font: inherit;
   font-size: 0.8rem;
   color: var(--muted);
-  margin-right: 2px;
-  flex: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: none;
+  border-radius: 0 8px 8px 0;
+  box-shadow: var(--shadow);
+  cursor: pointer;
 }
-.recent-chip {
-  display: inline-flex;
+.recent-drawer-tab:hover {
+  color: var(--primary);
+  border-color: var(--primary);
+}
+.recent-drawer-tab-text {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  letter-spacing: 0.04em;
+}
+.recent-drawer {
+  position: fixed;
+  left: 0;
+  top: 64px;
+  z-index: 40;
+  width: 240px;
+  max-height: calc(100vh - 80px);
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: none;
+  border-radius: 0 8px 8px 0;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.12);
+}
+.recent-drawer-head {
+  display: flex;
   align-items: center;
-  gap: 6px;
-  flex: none;
-  max-width: 260px;
+  justify-content: space-between;
+  padding: 8px 8px 8px 12px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-bottom: 1px solid var(--border);
+}
+.recent-drawer-close {
+  font: inherit;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 2px 8px;
+  color: var(--muted);
+  background: none;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.recent-drawer-close:hover {
+  color: var(--primary);
+  background: var(--bg, #f1f5f9);
+}
+.recent-drawer-list {
+  list-style: none;
+  margin: 0;
+  padding: 4px;
+  overflow-y: auto;
+}
+.recent-drawer-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  font-size: 0.85rem;
+  color: var(--text);
+  border-radius: 6px;
+}
+.recent-drawer-item:hover {
+  color: var(--primary);
+  background: var(--bg, #f1f5f9);
+  text-decoration: none;
+}
+.recent-drawer-item.active {
+  color: var(--primary);
+  font-weight: 600;
+}
+.recent-drawer-title {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 0.85rem;
-  color: var(--text);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 3px 10px;
-}
-.recent-chip:hover {
-  border-color: var(--primary);
-  color: var(--primary);
+  min-width: 0;
 }
 .recent-icon {
   color: var(--muted);

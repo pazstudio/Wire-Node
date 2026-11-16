@@ -32,6 +32,9 @@ and this project uses [Semantic Versioning](https://semver.org/).
 - Backups (format v8) also hold the history and the accounts, including password hashes, so keep them private.
   Restoring keeps the accounts of the server and adds accounts from the backup whose username is free.
 - The wiring summary records who downloaded it.
+- **Recents drawer**: recently opened components and connections are in a drawer on the left edge of every
+  project page (the "◷ Recent" tab), instead of a strip above the project tabs that its scroll bar covered.
+  It remembers whether it was left open.
 
 - **Arrange by folders** on the project map (Edit mode): every folder on the Components tab becomes a zone
   with its components laid out inside, most-wired components first. Folders that share wires are placed

@@ -6,7 +6,7 @@ import ConnectionEditorPage from './pages/ConnectionEditorPage';
 import WiringDiagramPage from './pages/WiringDiagramPage';
 import ProjectMapPage from './pages/ProjectMapPage';
 import AdminPage from './pages/AdminPage';
-import { ProjectMenu, QuickSwitcherButton } from './components/navigation';
+import { ProjectMenu, QuickSwitcherButton, RecentDrawer } from './components/navigation';
 import { ShortcutsButton } from './components/shortcuts';
 import { AuthGate, UserMenu } from './auth';
 import { ReasonProvider } from './components/reason';
@@ -27,6 +27,7 @@ export default function App() {
               <UserMenu />
             </nav>
           </header>
+          <RecentDrawer />
           <main className="main">
             <Routes>
               <Route path="/" element={<ProjectsPage />} />
