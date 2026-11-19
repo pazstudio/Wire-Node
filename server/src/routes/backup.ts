@@ -12,6 +12,7 @@ import { UPLOAD_DIR } from '../storage.js';
 import { buildWiringReport, wiringReportHash } from '../wiringReport.js';
 import { currentUser, need } from '../auth.js';
 import { saveBackupFile } from '../backupStore.js';
+import { restoreFiles } from '../revert.js';
 
 /**
  * Backup format (.tar.gz):
@@ -153,7 +154,8 @@ export async function createBackupArchive(log: FastifyBaseLogger) {
     prisma.group.findMany(),
     prisma.user.findMany(),
   ]);
-  const files = referencedFiles(rows);
+  // Also old pictures the history can revert to.
+  const files = [...new Set([...referencedFiles(rows), ...restoreFiles(history)])];
   const present: string[] = [];
   const missingFiles: string[] = [];
   for (const f of files) (fs.existsSync(path.join(UPLOAD_DIR, f)) ? present : missingFiles).push(f);
@@ -293,7 +295,7 @@ export async function restoreBackupFile(archivePath: string, replace: boolean, l
     const safetyBackup = existing > 0 ? (await saveBackupFile('before-restore', log)).name : null;
 
     // 5. Copy pictures into the uploads folder (UUID names, so no clashes with existing files).
-    const files = referencedFiles(rows);
+    const files = [...new Set([...referencedFiles(rows), ...restoreFiles(backup.history)])];
     const missingFiles: string[] = [];
     for (const f of files) {
       const src = path.join(extractDir, 'uploads', f);
@@ -344,6 +346,8 @@ export async function restoreBackupFile(archivePath: string, replace: boolean, l
               ...(h as any),
               userId: typeof h.userId === 'string' && userIds.has(h.userId) ? h.userId : null,
               before: h.before == null ? Prisma.DbNull : (h.before as Prisma.InputJsonValue),
+              restore: h.restore == null ? Prisma.DbNull : (h.restore as Prisma.InputJsonValue),
+              revertable: h.restore != null && h.revertable === true,
             })),
           });
         }

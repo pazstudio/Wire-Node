@@ -8,6 +8,11 @@ and this project uses [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Changes without a reason**: a new permission, "Make changes without giving a reason", lets a group (the Admin
+  group included, which does not get it automatically) edit without the reason dialog: editors open straight
+  away and changes are recorded in the history without a reason. Each user can override it in the Admin panel
+  (As the group / Always asked / Never asked). Deleting, locking and unlocking are still confirmed, with the
+  reason optional.
 - **Wire gauge and shielding**: each wire has its own editable gauge and a Shielded checkbox, in the wire panel
   and directly in the editor's wire table. Left empty, they follow the wire's cable. Both show in the
   pin-to-pin list of the wiring diagram and in the history.
@@ -26,6 +31,14 @@ and this project uses [Semantic Versioning](https://semver.org/).
 - **Automatic backups**: in the admin panel, set how often a backup is made and how many are kept (the oldest is
   deleted when a new one is made). Stored backups can be downloaded, restored or deleted there. Before any restore,
   the current state is saved as a backup. Set `BACKUP_DIR` (Docker: the `backups` volume) to keep them elsewhere.
+  Besides the newest backups, the last backup of each day is kept for 30 days (adjustable; days without a backup,
+  e.g. while the server was off, do not count).
+- **Revert from the history**: **↶ Revert** on a connection or component change puts the item back to how it was
+  before that change: connection edits, deleted connections, and component edits (connectors, name, description,
+  picture). Later changes to the same item are listed and undone too. A revert needs a reason and is itself in the
+  history, so it can be reverted. New permission "Revert changes from the history" (Admin only by default).
+  Changes recorded before this version cannot be reverted. Replaced component pictures are now kept (and included
+  in backups), so the history can go back to them.
 
 ### Changed
 

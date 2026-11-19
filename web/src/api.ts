@@ -231,7 +231,9 @@ export type Permission =
   | 'library.edit'
   | 'library.delete'
   | 'backups.manage'
-  | 'users.manage';
+  | 'users.manage'
+  | 'history.revert'
+  | 'changes.skipReason';
 
 export interface Me {
   id: string;
@@ -243,6 +245,8 @@ export interface Me {
   groupName: string;
   isAdmin: boolean;
   permissions: Permission[];
+  /** Not asked for the reason of a change (group permission or the user's own setting). */
+  skipReason: boolean;
   mustChangePassword: boolean;
 }
 
@@ -256,9 +260,11 @@ export interface ChangeEntry {
   entityType: 'connection' | 'component' | 'project';
   entityId: string;
   entityName: string;
-  action: 'create' | 'edit' | 'delete' | 'lock' | 'unlock' | 'place' | 'remove';
+  action: 'create' | 'edit' | 'delete' | 'lock' | 'unlock' | 'place' | 'remove' | 'revert';
   reason: string;
   summary: string[];
+  /** The item can be put back to how it was before this change. */
+  revertable: boolean;
 }
 
 // ---------- HTTP helpers ----------

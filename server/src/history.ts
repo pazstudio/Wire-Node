@@ -5,6 +5,7 @@ import { prisma } from './db.js';
 import { currentUser, need, type AuthUser } from './auth.js';
 import { assertNotFrozen, assertUnlocked } from './freeze.js';
 import { diffComponent, diffConnection, type ComponentSnapshot, type ConnectionSnapshot } from './historyDiff.js';
+import { capture, type RestoreState } from './revert.js';
 
 /**
  * "Recent changes" of connections and components.
@@ -24,6 +25,14 @@ export const ReasonSchema = z
   .trim()
   .min(3, 'Give a reason for this change (at least 3 characters)')
   .max(1000);
+
+/** For users who may skip the reason (AuthUser.skipReason): one can still be given, but may be empty. */
+const OptionalReasonSchema = z.string().trim().max(1000);
+
+/** Validates the reason for a change by this user; an empty one is fine when they skip reasons. */
+export function parseReason(user: AuthUser, value: unknown): string {
+  return user.skipReason ? OptionalReasonSchema.parse(value ?? '') : ReasonSchema.parse(value ?? '');
+}
 
 const SESSION_IDLE_MS = 12 * 3600_000;
 
@@ -130,11 +139,26 @@ export async function logChange(
     action: string;
     reason?: string;
     summary?: string[];
+    /** Rows before the change, to revert it (see revert.ts). */
+    restore?: RestoreState | null;
   },
 ) {
+  const { restore, ...rest } = entry;
   return prisma.changeLog.create({
-    data: { ...entry, projectId: entry.projectId ?? null, reason: entry.reason ?? '', summary: entry.summary ?? [], userId: user.id, userName: user.name },
+    data: {
+      ...rest,
+      projectId: entry.projectId ?? null,
+      reason: entry.reason ?? '',
+      summary: entry.summary ?? [],
+      userId: user.id,
+      userName: user.name,
+      ...restoreData(restore),
+    },
   });
+}
+
+function restoreData(restore: RestoreState | null | undefined) {
+  return restore ? { restore: restore as unknown as Prisma.InputJsonValue, revertable: true } : {};
 }
 
 /** The reason sent with a one-off change, in the query (DELETE) or the JSON body. */
@@ -145,9 +169,9 @@ export function reasonOf(req: FastifyRequest): string | undefined {
   return v;
 }
 
-/** A required reason for a one-off change; throws 400 if it is missing. */
+/** The reason for a one-off change; throws 400 if it is missing (unless the user skips reasons). */
 export function requireReason(req: FastifyRequest, value = reasonOf(req)) {
-  return ReasonSchema.parse(value ?? '');
+  return parseReason(currentUser(req), value);
 }
 
 /** Checks that permission and lock state allow editing the item, and returns where it belongs. */
@@ -201,18 +225,19 @@ export async function recordEdit<T>(
     return result;
   }
 
-  if (reason === undefined) {
+  if (reason === undefined && !user.skipReason) {
     throw httpError(428, 'Give a reason for this change.', 'REASON_REQUIRED');
   }
-  const why = ReasonSchema.parse(reason);
+  const why = parseReason(user, reason);
   const before = await snapshot(type, id);
+  const restore = await capture(type, id);
   const result = await change();
   const after = await snapshot(type, id);
   if (before && after) {
     const summary = diff(type, before, after);
     if (summary.length) {
       const projectId = type === 'connection' ? (after as ConnectionSnapshot & { projectId: string }).projectId : null;
-      await logChange(user, { projectId, entityType: type, entityId: id, entityName: after.name, action: 'edit', reason: why, summary });
+      await logChange(user, { projectId, entityType: type, entityId: id, entityName: after.name, action: 'edit', reason: why, summary, restore });
     }
   }
   return result;
@@ -233,10 +258,11 @@ export default async function historyRoutes(app: FastifyInstance) {
   // Opens an editing session: the reason is asked once, every autosave until the editor is left
   // is recorded in this entry.
   app.post('/api/changes/start', async (req, reply) => {
-    const body = z
-      .object({ entityType: z.enum(['connection', 'component']), entityId: z.string().min(1), reason: ReasonSchema })
-      .parse(req.body);
     const user = currentUser(req);
+    const body = z
+      .object({ entityType: z.enum(['connection', 'component']), entityId: z.string().min(1), reason: z.unknown() })
+      .parse(req.body);
+    const reason = parseReason(user, body.reason);
     const { projectId } = await checkEditable(req, body.entityType, body.entityId);
     const before = await snapshot(body.entityType, body.entityId);
     if (!before) return reply.code(404).send({ message: 'Not found' });
@@ -253,8 +279,9 @@ export default async function historyRoutes(app: FastifyInstance) {
         entityId: body.entityId,
         entityName: before.name,
         action: 'edit',
-        reason: body.reason,
+        reason,
         before: before as unknown as Prisma.InputJsonValue,
+        ...restoreData(await capture(body.entityType, body.entityId)),
       },
     });
     return reply.code(201).send({ id: entry.id, reason: entry.reason });
@@ -311,6 +338,7 @@ export default async function historyRoutes(app: FastifyInstance) {
         action: true,
         reason: true,
         summary: true,
+        revertable: true,
       },
     });
     const more = items.length > q.limit;

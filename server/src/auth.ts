@@ -21,9 +21,16 @@ export const PERMISSIONS = {
   'library.delete': 'Delete library components (from all projects), connectors and cables',
   'backups.manage': 'Backups: download, restore, automatic backup settings',
   'users.manage': 'Manage users and groups',
+  'history.revert': 'Revert changes from the history',
+  'changes.skipReason': 'Make changes without giving a reason (not asked for one)',
 } as const;
 export type Permission = keyof typeof PERMISSIONS;
 export const PERMISSION_KEYS = Object.keys(PERMISSIONS) as Permission[];
+/**
+ * A working preference rather than a power: the admin group does not get it automatically, so it
+ * can be switched on or off for admins too. A user's own setting (User.skipReason) overrides it.
+ */
+export const SKIP_REASON: Permission = 'changes.skipReason';
 export const PermissionSchema = z.enum(PERMISSION_KEYS as [Permission, ...Permission[]]);
 
 /** Groups made on first start. They can be changed in the admin panel (except Admin). */
@@ -47,6 +54,8 @@ export interface AuthUser {
   groupName: string;
   isAdmin: boolean;
   permissions: Permission[];
+  /** Changes need no reason (group permission, or the user's own override). */
+  skipReason: boolean;
   mustChangePassword: boolean;
 }
 
@@ -158,6 +167,8 @@ const userInclude = { group: true } as const;
 type UserRow = Prisma.UserGetPayload<{ include: typeof userInclude }>;
 
 export function toAuthUser(u: UserRow): AuthUser {
+  const groupSkips = u.group.permissions.includes(SKIP_REASON);
+  const granted = u.group.permissions.filter((p) => p in PERMISSIONS) as Permission[];
   return {
     id: u.id,
     username: u.username,
@@ -166,7 +177,10 @@ export function toAuthUser(u: UserRow): AuthUser {
     groupId: u.groupId,
     groupName: u.group.name,
     isAdmin: u.group.isAdmin,
-    permissions: u.group.isAdmin ? [...PERMISSION_KEYS] : (u.group.permissions.filter((p) => p in PERMISSIONS) as Permission[]),
+    permissions: u.group.isAdmin
+      ? PERMISSION_KEYS.filter((p) => p !== SKIP_REASON || groupSkips)
+      : granted,
+    skipReason: u.skipReason ?? groupSkips,
     mustChangePassword: u.mustChangePassword,
   };
 }

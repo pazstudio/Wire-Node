@@ -1,4 +1,5 @@
 import { useRef, useState, type ChangeEvent, type FormEvent } from 'react';
+import { useMe } from '../auth';
 import { useQuery } from '@tanstack/react-query';
 import { api, errorMessage, imgUrl, nextNumberedName, type Cable, type ConnectorType, type Folder, type Pcb, type Placement, type Project } from '../api';
 import { FolderField } from './folders';
@@ -155,6 +156,7 @@ export function PcbForm({
   const [folderId, setFolderId] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [reason, setReason] = useState('');
+  const skipReason = useMe().skipReason;
   const [preview, setPreview] = useState<string>(pcb ? imgUrl(pcb.thumbPath) : '');
   // Changing a library component needs a reason for its history (renaming the placement does not).
   const libraryChanged = !!pcb && (name.trim() !== pcb.name || description !== pcb.description || !!file);
@@ -174,7 +176,7 @@ export function PcbForm({
       setError(`"${duplicate.name}" is already in the component library.`);
       return;
     }
-    if (libraryChanged && reason.trim().length < 3) {
+    if (libraryChanged && !skipReason && reason.trim().length < 3) {
       setError('Give a reason for this change');
       return;
     }
@@ -269,7 +271,7 @@ export function PcbForm({
         {preview && <img src={preview} alt="" className="form-preview" />}
         {libraryChanged && (
           <label>
-            Reason for this change
+            Reason for this change{skipReason ? ' (optional)' : ''}
             <textarea
               value={reason}
               onChange={(e) => setReason(e.target.value)}

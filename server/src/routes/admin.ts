@@ -9,6 +9,7 @@ import {
   PasswordSchema,
   PermissionSchema,
   PERMISSIONS,
+  SKIP_REASON,
 } from '../auth.js';
 
 type P = { Params: { id: string } };
@@ -25,6 +26,7 @@ const UserCreate = z.object({
   username: Username,
   displayName: z.string().trim().max(120).default(''),
   groupId: z.string().min(1, 'Choose a group'),
+  skipReason: z.boolean().nullable().default(null),
   password: PasswordSchema,
 });
 
@@ -33,6 +35,8 @@ const UserUpdate = z
     displayName: z.string().trim().max(120),
     groupId: z.string().min(1),
     disabled: z.boolean(),
+    /** null = as the group. */
+    skipReason: z.boolean().nullable(),
     /** Sets a new password; the user has to change it at the next sign-in. */
     password: PasswordSchema,
   })
@@ -57,7 +61,8 @@ const userSelect = {
   mustChangePassword: true,
   createdAt: true,
   lastLoginAt: true,
-  group: { select: { id: true, name: true, isAdmin: true } },
+  skipReason: true,
+  group: { select: { id: true, name: true, isAdmin: true, permissions: true } },
 } as const;
 
 export default async function adminRoutes(app: FastifyInstance) {
@@ -79,6 +84,7 @@ export default async function adminRoutes(app: FastifyInstance) {
         username: b.username,
         displayName: b.displayName,
         groupId: b.groupId,
+        skipReason: b.skipReason,
         passwordHash: await hashPassword(b.password),
         // The admin chose this password, so the user picks their own at the first sign-in.
         mustChangePassword: true,
@@ -99,6 +105,7 @@ export default async function adminRoutes(app: FastifyInstance) {
         displayName: b.displayName,
         groupId: b.groupId,
         disabled: b.disabled,
+        skipReason: b.skipReason,
         ...(b.password ? { passwordHash: await hashPassword(b.password), mustChangePassword: true } : {}),
       },
       select: userSelect,
@@ -135,10 +142,12 @@ export default async function adminRoutes(app: FastifyInstance) {
       where: { name: { equals: b.name, mode: 'insensitive' }, NOT: { id: group.id } },
     });
     if (clash) throw conflict(`A group called "${b.name}" already exists`);
-    // The admin group always has every permission.
+    // The admin group always has every permission; only the "no reason" preference is stored for it.
     return prisma.group.update({
       where: { id: group.id },
-      data: group.isAdmin ? { name: b.name, description: b.description } : b,
+      data: group.isAdmin
+        ? { name: b.name, description: b.description, permissions: b.permissions.filter((p) => p === SKIP_REASON) }
+        : b,
     });
   });
 

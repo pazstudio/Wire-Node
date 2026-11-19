@@ -16,8 +16,13 @@ interface AdminUser {
   mustChangePassword: boolean;
   createdAt: string;
   lastLoginAt: string | null;
-  group: { id: string; name: string; isAdmin: boolean };
+  /** Overrides the group's "no reason" setting; null = as the group. */
+  skipReason: boolean | null;
+  group: { id: string; name: string; isAdmin: boolean; permissions: Permission[] };
 }
+
+/** Not a power, so the admin group does not have it automatically (see SKIP_REASON on the server). */
+const SKIP_REASON: Permission = 'changes.skipReason';
 
 interface Group {
   id: string;
@@ -159,6 +164,8 @@ function UserForm({ user, groups, onClose }: { user?: AdminUser; groups: Group[]
   const [displayName, setDisplayName] = useState(user?.displayName ?? '');
   const [groupId, setGroupId] = useState(user?.groupId ?? groups.find((g) => !g.isAdmin && g.name === 'Member')?.id ?? groups[0]?.id ?? '');
   const [disabled, setDisabled] = useState(user?.disabled ?? false);
+  const [skipReason, setSkipReason] = useState<boolean | null>(user?.skipReason ?? null);
+  const groupSkips = !!groups.find((g) => g.id === groupId)?.permissions.includes(SKIP_REASON);
   const [password, setPassword] = useState(user ? '' : temporaryPassword());
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -176,9 +183,15 @@ function UserForm({ user, groups, onClose }: { user?: AdminUser; groups: Group[]
     setError(null);
     try {
       if (user) {
-        await api.patch(`/api/admin/users/${user.id}`, { displayName, groupId, disabled, ...(password ? { password } : {}) });
+        await api.patch(`/api/admin/users/${user.id}`, {
+          displayName,
+          groupId,
+          disabled,
+          skipReason,
+          ...(password ? { password } : {}),
+        });
       } else {
-        await api.post('/api/admin/users', { username, displayName, groupId, password });
+        await api.post('/api/admin/users', { username, displayName, groupId, skipReason, password });
       }
       done();
     } catch (err) {
@@ -227,6 +240,21 @@ function UserForm({ user, groups, onClose }: { user?: AdminUser; groups: Group[]
               </option>
             ))}
           </select>
+        </label>
+        <label>
+          Reason for changes
+          <select
+            value={skipReason === null ? 'group' : skipReason ? 'skip' : 'ask'}
+            onChange={(e) => setSkipReason(e.target.value === 'group' ? null : e.target.value === 'skip')}
+          >
+            <option value="group">As the group ({groupSkips ? 'not asked' : 'asked'})</option>
+            <option value="ask">Always asked</option>
+            <option value="skip">Never asked</option>
+          </select>
+          <span className="hint">
+            When not asked, edits are saved straight away and recorded in the history without a reason. Deleting and
+            locking are still confirmed, with the reason optional.
+          </span>
         </label>
         <label>
           {user ? 'New temporary password (optional)' : 'Temporary password'}
@@ -303,7 +331,7 @@ function GroupsTab() {
       <div className="panel-head admin-head">
         <p className="muted small">
           Every user is in one group; the group decides what they may do. Everyone signed in can view projects and their
-          history. Changes take effect immediately.
+          history. Changes take effect immediately. "Without a reason" can also be set per user (Users tab).
         </p>
         <button className="btn btn-primary" onClick={() => setEditing('new')}>
           + New group
@@ -329,18 +357,21 @@ function GroupsTab() {
             {perms.map((p) => (
               <tr key={p}>
                 <td>{labels.data[p]}</td>
-                {groups.data.map((g) => (
-                  <td key={g.id} className="perm-col">
-                    <input
-                      type="checkbox"
-                      aria-label={`${g.name}: ${labels.data[p]}`}
-                      checked={g.isAdmin || g.permissions.includes(p)}
-                      disabled={g.isAdmin}
-                      title={g.isAdmin ? 'The admin group can always do everything' : undefined}
-                      onChange={(e) => toggle(g, p, e.target.checked)}
-                    />
-                  </td>
-                ))}
+                {groups.data.map((g) => {
+                  const fixed = g.isAdmin && p !== SKIP_REASON;
+                  return (
+                    <td key={g.id} className="perm-col">
+                      <input
+                        type="checkbox"
+                        aria-label={`${g.name}: ${labels.data[p]}`}
+                        checked={fixed || g.permissions.includes(p)}
+                        disabled={fixed}
+                        title={fixed ? 'The admin group can always do everything' : undefined}
+                        onChange={(e) => toggle(g, p, e.target.checked)}
+                      />
+                    </td>
+                  );
+                })}
               </tr>
             ))}
           </tbody>

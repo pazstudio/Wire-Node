@@ -5,6 +5,7 @@ import { assertUnlocked } from '../freeze.js';
 import { folderInProject } from './projects.js';
 import { need } from '../auth.js';
 import { logChange, reasonOf, recordEdit, requireReason } from '../history.js';
+import { captureConnection } from '../revert.js';
 
 /** Board fields the diagram needs to show a picture of where a connector is. */
 export const pcbPreviewSelect = {
@@ -251,8 +252,10 @@ export default async function connectionRoutes(app: FastifyInstance) {
     const reason = requireReason(req);
     const conn = await prisma.connection.findUniqueOrThrow({ where: { id: req.params.id }, include: { _count: { select: { wires: true } } } });
     await assertUnlocked(conn.projectId);
+    const restore = await captureConnection(conn.id);
     await prisma.connection.delete({ where: { id: conn.id } });
     await logChange(user, {
+      restore,
       projectId: conn.projectId,
       entityType: 'connection',
       entityId: conn.id,

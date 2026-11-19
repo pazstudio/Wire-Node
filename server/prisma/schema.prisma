@@ -281,6 +281,8 @@ model User {
   mustChangePassword Boolean     @default(false)
   createdAt          DateTime    @default(now())
   lastLoginAt        DateTime?
+  /// Overrides the group's "changes.skipReason": true = never asked for a reason, false = always asked, null = as the group.
+  skipReason         Boolean?
   group              Group       @relation(fields: [groupId], references: [id])
   sessions           Session[]
   changes            ChangeLog[]
@@ -322,6 +324,11 @@ model ChangeLog {
   summary    String[] @default([])
   /// Snapshot taken when an editing session started (see history.ts); null for one-off actions.
   before     Json?
+  /// The item's database rows before the change, to revert it (see revert.ts). Null when the
+  /// change cannot be reverted (or was recorded before reverting existed).
+  restore    Json?
+  /// True when `restore` is set (so lists can tell without loading it).
+  revertable Boolean  @default(false)
   user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([entityType, entityId, updatedAt])

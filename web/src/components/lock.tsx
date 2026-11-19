@@ -59,6 +59,8 @@ export function LockButton({ project }: { project: Project }) {
       message,
       confirmLabel: locked ? 'Unlock' : 'Lock project',
       danger: locked,
+      // Locking is not undone by everyone who can lock, so it is always confirmed.
+      confirm: true,
       placeholder: locked ? 'e.g. Rev B needs the new fan wiring' : 'e.g. Rev A shipped to customer',
       action: async (reason) => {
         setBusy(true);

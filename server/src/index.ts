@@ -16,6 +16,7 @@ import mapRoutes from './routes/map.js';
 import backupRoutes from './routes/backup.js';
 import adminRoutes from './routes/admin.js';
 import historyRoutes from './history.js';
+import revertRoutes from './revert.js';
 import backupStoreRoutes, { startBackupScheduler } from './backupStore.js';
 import { ensureAccounts, registerAuth } from './auth.js';
 
@@ -66,6 +67,7 @@ await app.register(backupRoutes);
 await app.register(backupStoreRoutes);
 await app.register(adminRoutes);
 await app.register(historyRoutes);
+await app.register(revertRoutes);
 
 // Built frontend (present in the Docker image; in development Vite serves it).
 const hasWeb = fs.existsSync(path.join(PUBLIC_DIR, 'index.html'));

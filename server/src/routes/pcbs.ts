@@ -122,7 +122,7 @@ export default async function pcbRoutes(app: FastifyInstance) {
             : {}),
         },
       });
-      if (img) await deleteFiles(existing.imagePath, existing.thumbPath);
+      // The old picture is kept: the history can revert to it (see revert.ts).
       return pcb;
     });
   });

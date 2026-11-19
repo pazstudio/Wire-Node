@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, errorMessage, imgUrl, withReason, type Folder, type Pcb, type Placement } from '../../api';
-import { useCan } from '../../auth';
+import { useCan, useMe } from '../../auth';
 import { useAskReason } from '../../components/reason';
 import {
   FolderField,
@@ -268,7 +268,8 @@ function DeletePcbModal({ pcb, onClose, onDeleted }: { pcb: Pcb; onClose: () => 
   const [reason, setReason] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const confirmed = typed.trim() === DELETE_PHRASE && reason.trim().length >= 3;
+  const skipReason = useMe().skipReason;
+  const confirmed = typed.trim() === DELETE_PHRASE && (skipReason || reason.trim().length >= 3);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -304,7 +305,7 @@ function DeletePcbModal({ pcb, onClose, onDeleted }: { pcb: Pcb; onClose: () => 
           </p>
         )}
         <label>
-          Reason for deleting it
+          Reason for deleting it{skipReason ? ' (optional)' : ''}
           <textarea
             value={reason}
             onChange={(e) => setReason(e.target.value)}

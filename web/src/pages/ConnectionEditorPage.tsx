@@ -512,9 +512,11 @@ function Editor({
           View wiring diagram
         </Link>
       </div>
-      <p className="edit-reason no-print" title="Recorded in the history with every change you make here">
-        ✎ Editing because: <em>{session.reason}</em>
-      </p>
+      {session.reason && (
+        <p className="edit-reason no-print" title="Recorded in the history with every change you make here">
+          ✎ Editing because: <em>{session.reason}</em>
+        </p>
+      )}
       {saveError && <p className="error">{saveError}</p>}
 
       <div className="editor-layout">

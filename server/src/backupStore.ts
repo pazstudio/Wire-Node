@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { prisma } from './db.js';
 import { need } from './auth.js';
 import { createBackupArchive, HttpError, restoreBackupFile } from './routes/backup.js';
+import { backupDay, backupsToKeep } from './backupRetention.js';
 
 /**
  * Automatic backups: every `intervalHours` a backup file is written to BACKUP_DIR, and only the
@@ -25,12 +26,14 @@ export const BackupSettings = z.object({
   enabled: z.boolean(),
   /** Hours between backups (1 hour to 30 days). */
   intervalHours: z.number().int().min(1).max(720),
-  /** How many automatic backups to keep. */
+  /** How many of the newest automatic backups to keep. */
   keep: z.number().int().min(1).max(1000),
+  /** Also keep the newest backup of each day, for this many days (0 = off). Defaults for settings saved before it existed. */
+  keepDays: z.number().int().min(0).max(3650).default(30),
 });
 export type BackupSettings = z.infer<typeof BackupSettings>;
 
-const DEFAULT_SETTINGS: BackupSettings = { enabled: true, intervalHours: 24, keep: 14 };
+const DEFAULT_SETTINGS: BackupSettings = { enabled: true, intervalHours: 24, keep: 14, keepDays: 30 };
 
 interface LastRun {
   at: string;
@@ -69,10 +72,11 @@ export async function listBackupFiles() {
   return files.sort((a, b) => b.name.localeCompare(a.name));
 }
 
-/** Deletes the oldest backups of a kind beyond `keep`. */
-async function rotate(kind: BackupKind, keep: number) {
-  const files = (await listBackupFiles()).filter((f) => f.kind === kind);
-  for (const f of files.slice(keep)) await fs.promises.rm(path.join(BACKUP_DIR, f.name), { force: true });
+/** Deletes the backups of a kind that the retention settings no longer keep (see backupRetention.ts). */
+async function rotate(kind: BackupKind, settings: { keep: number; keepDays: number }) {
+  const files = (await listBackupFiles()).filter((f) => f.kind === kind).map((f) => ({ ...f, day: backupDay(f.name) }));
+  const keep = backupsToKeep(files, settings);
+  for (const f of files) if (!keep.has(f.name)) await fs.promises.rm(path.join(BACKUP_DIR, f.name), { force: true });
 }
 
 /** Writes a backup file to BACKUP_DIR (via a temporary name, so a half-written file is never listed). */
@@ -90,7 +94,7 @@ export async function saveBackupFile(kind: BackupKind, log: FastifyBaseLogger) {
     await fs.promises.rm(tmp, { force: true });
     throw err;
   }
-  await rotate(kind, kind === 'auto' ? (await getBackupSettings()).keep : KEEP_BEFORE_RESTORE);
+  await rotate(kind, kind === 'auto' ? await getBackupSettings() : { keep: KEEP_BEFORE_RESTORE, keepDays: 0 });
   return { name };
 }
 
@@ -156,7 +160,7 @@ export default async function backupStoreRoutes(app: FastifyInstance) {
   app.put('/api/backups/settings', async (req) => {
     const settings = BackupSettings.parse(req.body);
     await setSetting('backup', settings);
-    await rotate('auto', settings.keep);
+    await rotate('auto', settings);
     return { settings, nextRunAt: await nextRunAt(settings) };
   });
 

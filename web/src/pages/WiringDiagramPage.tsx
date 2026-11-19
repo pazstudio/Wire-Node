@@ -11,13 +11,14 @@ import { colorLabel } from '../colors';
 import { ProjectCrumb } from '../components/navigation';
 import { useRecordVisit } from '../recents';
 import { useCan } from '../auth';
-import { HistoryList } from '../components/history';
+import { HistoryList, useRevertCount } from '../components/history';
 
 const diagramNodeTypes = { ...nodeTypes, zone: ZoneNode };
 const isConnector = (n: ConnFlowNode | ZoneFlowNode): n is ConnFlowNode => n.type === 'connector';
 
 export default function WiringDiagramPage() {
   const { pid, cid } = useParams() as { pid: string; cid: string };
+  const reverts = useRevertCount(cid);
   const q = useQuery({
     queryKey: ['connection', cid],
     queryFn: () => api.get<Connection>(`/api/connections/${cid}`),
@@ -26,7 +27,7 @@ export default function WiringDiagramPage() {
   if (!q.data) return <Loading error={q.error} />;
   return (
     <ReactFlowProvider>
-      <Diagram key={q.data.id} projectId={pid} conn={q.data} />
+      <Diagram key={`${q.data.id}:${reverts}`} projectId={pid} conn={q.data} />
     </ReactFlowProvider>
   );
 }

@@ -24,7 +24,7 @@ import { ProjectCrumb } from '../components/navigation';
 import { useRecordVisit } from '../recents';
 import { useCan } from '../auth';
 import { useEditSession } from '../components/reason';
-import { HistoryList } from '../components/history';
+import { HistoryList, useRevertCount } from '../components/history';
 import { colorLabel } from '../colors';
 
 // Allow pinch-zoom while a drag is in progress.
@@ -198,6 +198,7 @@ function useConnectorAutosave(getItem: (id: string) => PcbConnector | undefined,
 
 export default function PcbPage() {
   const { pid, pcbId } = useParams() as { pid: string; pcbId: string };
+  const reverts = useRevertCount(pcbId);
   const pcbQ = useQuery({
     queryKey: ['pcb', pcbId],
     queryFn: () => api.get<PcbDetail>(`/api/pcbs/${pcbId}`),
@@ -206,7 +207,7 @@ export default function PcbPage() {
   });
   const typesQ = useQuery({ queryKey: ['connectorTypes'], queryFn: () => api.get<ConnectorType[]>('/api/connector-types') });
   if (!pcbQ.data || !typesQ.data) return <Loading error={pcbQ.error || typesQ.error} />;
-  return <PcbEditor key={pcbQ.data.id} pcb={pcbQ.data} projectId={pid} types={typesQ.data} />;
+  return <PcbEditor key={`${pcbQ.data.id}:${reverts}`} pcb={pcbQ.data} projectId={pid} types={typesQ.data} />;
 }
 
 function PcbEditor({ pcb, projectId, types }: { pcb: PcbDetail; projectId: string; types: ConnectorType[] }) {

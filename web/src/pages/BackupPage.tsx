@@ -18,6 +18,23 @@ interface BackupSettings {
   enabled: boolean;
   intervalHours: number;
   keep: number;
+  /** Also the last backup of each day, for this many days (0 = off). */
+  keepDays: number;
+}
+
+/** Same rule as the server (backupRetention.ts): the newest `keep`, plus the newest of each of the last `keepDays` days. */
+function backupsToKeep(files: { name: string }[], s: { keep: number; keepDays: number }) {
+  const newestFirst = [...files].sort((a, b) => b.name.localeCompare(a.name));
+  const keep = new Set(newestFirst.slice(0, s.keep).map((f) => f.name));
+  const days = new Set<string>();
+  for (const f of newestFirst) {
+    if (days.size >= s.keepDays) break;
+    const day = /-(\d{8})-\d{6}\.tar\.gz$/.exec(f.name)?.[1] ?? '';
+    if (days.has(day)) continue;
+    days.add(day);
+    keep.add(f.name);
+  }
+  return keep;
 }
 interface BackupFile {
   name: string;
@@ -87,8 +104,9 @@ export function AutoBackupPanel() {
 
   async function save(e: FormEvent) {
     e.preventDefault();
-    const removing = state.files.filter((f) => f.kind === 'auto').length - s.keep;
-    if (removing > 0 && !confirm(`Keeping ${s.keep} backups deletes the ${removing} oldest automatic backup(s) now. Continue?`)) return;
+    const autos = state.files.filter((f) => f.kind === 'auto');
+    const removing = autos.length - backupsToKeep(autos, s).size;
+    if (removing > 0 && !confirm(`With these settings, ${removing} older automatic backup(s) are deleted now. Continue?`)) return;
     await run('save', async () => {
       await api.put('/api/backups/settings', s);
       setDraft(null);
@@ -147,7 +165,7 @@ export function AutoBackupPanel() {
             </label>
           )}
           <label>
-            Backups to keep
+            Newest backups to keep
             <input
               type="number"
               min={1}
@@ -156,10 +174,24 @@ export function AutoBackupPanel() {
               onChange={(e) => setDraft({ ...s, keep: Math.max(1, Math.round(Number(e.target.value) || 1)) })}
             />
           </label>
+          <label>
+            Plus one per day, for days
+            <input
+              type="number"
+              min={0}
+              max={3650}
+              value={s.keepDays}
+              onChange={(e) => setDraft({ ...s, keepDays: Math.max(0, Math.round(Number(e.target.value) || 0)) })}
+            />
+          </label>
         </div>
         <p className="hint">
           {s.enabled
-            ? `Keeps the newest ${s.keep} backups, which go back about ${formatSpan(s.keep * s.intervalHours)}. When a new backup is made, the oldest one is deleted.`
+            ? `Keeps the newest ${s.keep} backups (about ${formatSpan(s.keep * s.intervalHours)} back)` +
+              (s.keepDays > 0
+                ? `, and also the last backup of each day for the last ${s.keepDays} days that have a backup.`
+                : '.') +
+              ' Older backups are deleted when a new one is made.'
             : 'No backups are made automatically. Stored backups stay until you delete them.'}
         </p>
         <ErrorText error={error} />
