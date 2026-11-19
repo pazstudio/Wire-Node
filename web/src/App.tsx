@@ -41,6 +41,7 @@ export default function App() {
               <Route path="*" element={<p className="page">Page not found. <Link to="/">Go home</Link></p>} />
             </Routes>
           </main>
+          <footer className="app-footer no-print">Made by Zdeněk Pazourek</footer>
         </div>
       </ReasonProvider>
     </AuthGate>

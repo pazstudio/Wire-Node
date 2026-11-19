@@ -108,6 +108,7 @@ function ShortcutsModal({ onClose }: { onClose: () => void }) {
           </section>
         ))}
       </div>
+      <p className="muted small sc-credit">Wire-Node, made by Zdeněk Pazourek</p>
     </Modal>
   );
 }
