@@ -5,6 +5,7 @@ import { prisma } from './db.js';
 import { currentUser, need, type AuthUser } from './auth.js';
 import { assertNotFrozen, assertUnlocked } from './freeze.js';
 import { diffComponent, diffConnection, type ComponentSnapshot, type ConnectionSnapshot } from './historyDiff.js';
+import { hiddenProjectIds } from './projectAccess.js';
 import { capture, type RestoreState } from './revert.js';
 
 /**
@@ -108,10 +109,12 @@ export async function componentSnapshot(id: string): Promise<ComponentSnapshot |
       name: connectorName(c) === 'connector' ? '' : connectorName(c),
       type: c.connectorType?.name ?? '',
       rect: [c.x, c.y, c.w, c.h].map(r).join(','),
-      pins: (Array.isArray(c.pins) ? (c.pins as { n: number; name?: string; color?: string }[]) : []).map((x) => ({
+      pins: (Array.isArray(c.pins) ? (c.pins as { n: number; name?: string; color?: string; current?: number | null; role?: string }[]) : []).map((x) => ({
         n: x.n,
         name: x.name ?? '',
         color: x.color ?? '',
+        ...(x.current != null ? { current: x.current } : {}),
+        ...(x.role ? { role: x.role } : {}),
       })),
     })),
   };
@@ -307,6 +310,8 @@ export default async function historyRoutes(app: FastifyInstance) {
       ...(q.before ? { updatedAt: { lt: new Date(q.before) } } : {}),
     };
     const and: Prisma.ChangeLogWhereInput[] = [];
+    const hidden = [...(await hiddenProjectIds(req))];
+    if (hidden.length) and.push({ OR: [{ projectId: null }, { projectId: { notIn: hidden } }] });
     if (q.entityType) and.push({ entityType: q.entityType });
     if (q.entityId) and.push({ entityId: q.entityId });
     if (q.projectId) {

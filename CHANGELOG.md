@@ -8,6 +8,85 @@ and this project uses [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Units**: the machines built from a project (e.g. serial RC4-003), each with its own build checklist, test
+  results, status (building, tested, shipped, retired), notes and comments.
+- **Test results**: a wire's test can be marked as **failed** with a note ("no continuity"); failures show in
+  red on the checklist and on the Build tab.
+- **Test mode** for phones: one wire at a time in large text, with Pass / Fail buttons and skip, per unit and
+  connection. The screen stays on while testing.
+- **Checklist without a connection**: ticks made while the server cannot be reached are kept on the device and
+  sent when it is back, with the time they were made.
+- **Wires view** (Build tab): every wire in one table with filters (folder, connection, missing gauge, length or
+  color), to set gauge, length, color or shielding on many wires at once. Each connection gets a history entry.
+- **Drawings** (Build tab): harness drawings of one connection, or of a whole folder or project combined in one
+  drawing, with colored wires, wire numbers, lengths and a wire list. Print or download as SVG. Every connector
+  gets a reference (P1, P2…) with its connector type, number of positions and crimp, and all its cavities are
+  listed (unused ones as NC), plus a connector table, so the drawing can be sent to a cable maker. **Download
+  order list (CSV)** gives the same as a spreadsheet.
+- **Firmware** (Build tab): a draft RepRapFirmware `config.g` (drives, endstops, probes, temperature sensors,
+  heaters, fans, other inputs and outputs) or Klipper `printer.cfg` skeleton, from which device is wired to
+  which controller port. The CAN address (or Klipper MCU name) of each board is set there.
+- **Pin roles** (power, ground, input, output, CAN H, CAN L, shield) on the component's connector panel. New
+  checks: CAN_H wired to CAN_L (also from pin names), two outputs joined, power wired to ground, an output on a
+  supply.
+- **Voltage drop check**: a warning when a wire on a supply net loses more than 3 % of the voltage at the max
+  current of its pins, from its length and gauge.
+- **Paste pin list** on the connector panel: fill pin names (and color, max current, role) from a datasheet or
+  spreadsheet.
+- **Restricted projects**: a project can be limited to chosen people (plus admins), e.g. a contractor's own
+  project. Others do not see it anywhere. Set with **Access** on the project page (needs "Manage users").
+- **Notifications** (Admin panel): a webhook for Slack, Discord, Teams, ntfy and others, on @mentions, new
+  comments, failed wire tests and failed backups.
+- **Backup restore test**: every automatic backup is unpacked and checked after it is written, and any stored
+  backup can be checked with **Verify**. A failure is shown in the Backups tab and sent as a notification.
+- **HTTPS** with Caddy: `docker-compose.https.yml` and `Caddyfile` (see README). Turns on offline viewing and
+  installing the app on phones.
+
+### Changed
+
+- The Build tab, wiring summary and project comparison load only the projects they need instead of the whole
+  database.
+
+- **Build tab** on each project, with five views:
+  - **Checks**: design checks of the wiring. Errors: two supplies wired together (from pin names such as
+    24V, 5V, 3V3, GND, 0V), wires on a pin the connector does not have, wires too thin for the max current set
+    on their pins. Warnings: wires without gauge, length or color, a pin wired in several connections. Notes:
+    double crimps, free connectors, nets that join differently named pins. A finding can be marked as
+    **intended** (with a note); it comes back if the pins involved change.
+  - **Parts & cut list**: loose wire grouped by gauge, color and shielding with the total to cut, cables per
+    connection, and connector housings, crimps and splices with where they go. An extra length per wire and
+    a spare percentage can be added. Download as CSV or print.
+  - **Checklist**: tick each wire as crimped and as tested, per connection or all at once, with progress
+    bars. Ticks are shared, allowed in locked projects, and a wire changed after it was ticked shows as
+    "changed". The Build tab shows the error count or the tested percentage.
+  - **Labels**: wire-end labels (wire number, this end, far end, signal) and harness tags with a QR code that
+    opens the connection, printed on A4 or downloaded as CSV for label printer software.
+  - **Nets**: every set of pins joined by wires, followed through inline connectors and across connections,
+    named after its pin names, with the max current on it.
+- **Max current per pin** (optional, in A) in the component's connector panel, used by the gauge check.
+- **Compare projects** (History tab): what differs from another project, e.g. the previous revision of the
+  machine: components and connections added or removed, and wires added, removed or changed. Matched by
+  name, so a duplicated project lines up with its original.
+- **Import wires from CSV** (Connections tab): one wire per row; components, connectors and pins are matched
+  by name, label or number, an empty component makes an inline connector. A preview lists the rows that
+  cannot be placed. New connections are created, existing ones get the wires added, each with a history
+  entry that can be reverted.
+- **Comments** on connections, components and projects, with **@mentions**: the **@** button in the top bar
+  lists open comments that mention you. Comments can be resolved.
+- **Files on components**: attach datasheets, pinouts or measurements to a library component.
+- **Read-only API tokens** (user menu → API tokens), for scripts: `Authorization: Bearer wn_…`. They can only
+  read, and never get admin rights (no backups or accounts).
+- **Find on the photo**: a search box on the component page highlights connectors and pins by label, name,
+  type or pin name. Search results link to the connector on the photo.
+- **Add common connectors**: JST XH/PH/ZH/VH/SM, Molex KK/PicoBlade/Micro-Fit/Mini-Fit, Dupont, Deutsch DT,
+  M12 and XT30/60 with housing and crimp part numbers.
+- **Wire color suggestions**: a new wire without a cable core or pin color gets the usual color for its pin
+  name (GND black, supplies red, PE green/yellow, N blue, L brown).
+- **Dark theme** (user menu → Auto / Light / Dark; Auto follows the system).
+- **Offline viewing** behind HTTPS: pages opened before can be viewed without a connection; a banner says
+  when the browser is offline. Browsers only allow this on HTTPS (or localhost), not on a plain
+  `http://<ip>:8080` address.
+
 - **Changes without a reason**: a new permission, "Make changes without giving a reason", lets a group (the Admin
   group included, which does not get it automatically) edit without the reason dialog: editors open straight
   away and changes are recorded in the history without a reason. Each user can override it in the Admin panel
@@ -121,6 +200,11 @@ and this project uses [Semantic Versioning](https://semver.org/).
   the next page, repeating its header on every page.
 
 ### Upgrading
+
+- Backups now use format v10 (build checklist with units and test results, dismissed checks, comments,
+  attached files, restricted project members). Older backups still restore.
+- The checklist table gets a new primary key (with the unit); `prisma/upgrade.sql` changes it on start and keeps
+  existing ticks.
 
 - Existing data is upgraded automatically on start. Run `npm run db:push` (not `npx prisma db push`) when
   running from source.

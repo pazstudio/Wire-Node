@@ -46,6 +46,8 @@ interface BackupsState {
   settings: BackupSettings;
   files: BackupFile[];
   lastRun: { at: string; ok: boolean; file?: string; error?: string } | null;
+  /** Last restore test of a stored backup (made after every automatic backup). */
+  lastVerify: { at: string; file: string; ok: boolean; error?: string; counts?: { projects: number; wires: number; files: number } } | null;
   nextRunAt: string | null;
   running: boolean;
   dir: string;
@@ -228,6 +230,17 @@ export function AutoBackupPanel() {
           <>No automatic backup yet. </>
         )}
         {state.nextRunAt && <>Next: {new Date(state.nextRunAt).toLocaleString()}. </>}
+        {state.lastVerify &&
+          (state.lastVerify.ok ? (
+            <span className="ok-text">
+              Restore test of {state.lastVerify.file} passed ({state.lastVerify.counts?.projects} projects,{' '}
+              {state.lastVerify.counts?.wires} wires, {state.lastVerify.counts?.files} files).{' '}
+            </span>
+          ) : (
+            <span className="error">
+              Restore test of {state.lastVerify.file} FAILED: {state.lastVerify.error}.{' '}
+            </span>
+          ))}
         Stored on the server in <code>{state.dir}</code>.
       </p>
 
@@ -265,6 +278,19 @@ export function AutoBackupPanel() {
                     <a className="btn btn-sm" href={`/api/backups/${encodeURIComponent(f.name)}/download`} download>
                       Download
                     </a>
+                    <button
+                      className="btn btn-sm"
+                      disabled={!!busy}
+                      title="Check that this backup can be restored, without restoring it"
+                      onClick={() =>
+                        run(`verify:${f.name}`, async () => {
+                          const r = await api.post<{ ok: boolean; error?: string }>(`/api/backups/${encodeURIComponent(f.name)}/verify`, {});
+                          alert(r.ok ? `${f.name} can be restored.` : `${f.name} cannot be restored: ${r.error}`);
+                        })
+                      }
+                    >
+                      {busy === `verify:${f.name}` ? 'Checking…' : 'Verify'}
+                    </button>
                     <button className="btn btn-sm" disabled={!!busy} onClick={() => restore(f)}>
                       {busy === `restore:${f.name}` ? 'Restoring…' : 'Restore'}
                     </button>

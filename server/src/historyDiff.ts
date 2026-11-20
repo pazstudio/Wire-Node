@@ -25,7 +25,7 @@ export interface ComponentSnapshot {
     type: string;
     /** Rounded rectangle, to tell "moved or resized" without noise from tiny drags. */
     rect: string;
-    pins: { n: number; name: string; color: string }[];
+    pins: { n: number; name: string; color: string; current?: number | null; role?: string }[];
   }[];
 }
 
@@ -131,6 +131,10 @@ export function diffComponent(a: ComponentSnapshot, b: ComponentSnapshot): strin
       }
       if (o.name !== p.name) parts.push(`pin ${p.n} name ${o.name ? q(o.name) : 'empty'} → ${p.name ? q(p.name) : 'empty'}`);
       if (o.color !== p.color) parts.push(`pin ${p.n} color ${o.color || 'none'} → ${p.color || 'none'}`);
+      if ((o.current ?? null) !== (p.current ?? null)) {
+        parts.push(`pin ${p.n} max current ${o.current != null ? `${o.current} A` : 'none'} → ${p.current != null ? `${p.current} A` : 'none'}`);
+      }
+      if ((o.role ?? '') !== (p.role ?? '')) parts.push(`pin ${p.n} role ${o.role || 'none'} → ${p.role || 'none'}`);
     }
     for (const p of old.pins) if (!pinsB.has(p.n) && (p.name || p.color)) parts.push(`pin ${p.n} ${q(p.name)} removed`);
     if (parts.length) lines.push(`Connector ${label}: ${parts.join(', ')}`);

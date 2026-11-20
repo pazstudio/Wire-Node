@@ -5,7 +5,8 @@ import type { FastifyBaseLogger, FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { prisma } from './db.js';
 import { need } from './auth.js';
-import { createBackupArchive, HttpError, restoreBackupFile } from './routes/backup.js';
+import { createBackupArchive, HttpError, restoreBackupFile, verifyBackupFile } from './routes/backup.js';
+import { notify } from './notify.js';
 import { backupDay, backupsToKeep } from './backupRetention.js';
 
 /**
@@ -108,11 +109,19 @@ async function runAutoBackup(log: FastifyBaseLogger) {
     const { name } = await saveBackupFile('auto', log);
     await setSetting('backup.lastRun', { at: new Date().toISOString(), ok: true, file: name } satisfies LastRun);
     log.info(`Automatic backup written: ${name}`);
+    // Restore test: a backup is only worth something if it can be read back.
+    const check = await verifyBackupFile(path.join(BACKUP_DIR, name));
+    await setSetting('backup.lastVerify', { at: new Date().toISOString(), file: name, ...check });
+    if (!check.ok) {
+      log.error(`Backup ${name} failed its restore test: ${check.error}`);
+      notify('backupFailures', `⚠ Wire-Node backup ${name} failed its restore test: ${check.error}`, '/admin?tab=backups', log);
+    }
     return name;
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
     await setSetting('backup.lastRun', { at: new Date().toISOString(), ok: false, error } satisfies LastRun);
     log.error(err, 'Automatic backup failed');
+    notify('backupFailures', `⚠ Wire-Node automatic backup failed: ${error}`, '/admin?tab=backups', log);
     throw err;
   } finally {
     running = false;
@@ -153,8 +162,13 @@ export default async function backupStoreRoutes(app: FastifyInstance) {
 
   app.get('/api/backups', async () => {
     const settings = await getBackupSettings();
-    const [files, lastRun, next] = await Promise.all([listBackupFiles(), getSetting<LastRun>('backup.lastRun'), nextRunAt(settings)]);
-    return { settings, files, lastRun, nextRunAt: next, running, dir: BACKUP_DIR };
+    const [files, lastRun, next, lastVerify] = await Promise.all([
+      listBackupFiles(),
+      getSetting<LastRun>('backup.lastRun'),
+      nextRunAt(settings),
+      getSetting<Record<string, unknown>>('backup.lastVerify'),
+    ]);
+    return { settings, files, lastRun, lastVerify, nextRunAt: next, running, dir: BACKUP_DIR };
   });
 
   app.put('/api/backups/settings', async (req) => {
@@ -172,6 +186,16 @@ export default async function backupStoreRoutes(app: FastifyInstance) {
     if (!fs.existsSync(file)) return reply.code(404).send({ message: 'Not found' });
     reply.header('Content-Type', 'application/gzip').header('Content-Disposition', `attachment; filename="${name}"`);
     return reply.send(fs.createReadStream(file));
+  });
+
+  // Restore test of one stored backup, without restoring it.
+  app.post<{ Params: { name: string } }>('/api/backups/:name/verify', async (req, reply) => {
+    const { name } = NameParam.parse(req.params);
+    const file = path.join(BACKUP_DIR, name);
+    if (!fs.existsSync(file)) return reply.code(404).send({ message: 'Not found' });
+    const check = await verifyBackupFile(file);
+    await setSetting('backup.lastVerify', { at: new Date().toISOString(), file: name, ...check });
+    return check;
   });
 
   app.delete<{ Params: { name: string } }>('/api/backups/:name', async (req) => {

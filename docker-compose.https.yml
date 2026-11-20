@@ -1,0 +1,32 @@
+# Optional HTTPS in front of Wire-Node, with Caddy. Start with both files:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.https.yml up -d
+#
+# Set SITE_ADDRESS (e.g. in .env) to how people reach the server:
+#   - a public domain name pointing at this server: SITE_ADDRESS=wiring.example.com and TLS= (empty),
+#     and Caddy gets a Let's Encrypt certificate by itself (ports 80 and 443 must be reachable);
+#   - a LAN address or name: SITE_ADDRESS=192.168.1.50 (default: localhost) and the default
+#     TLS=tls internal, a certificate from Caddy's own authority. Install its root certificate once on
+#     each device (see README, "HTTPS"), so browsers trust it.
+#
+# HTTPS turns on offline viewing and "install as app" on phones and tablets.
+services:
+  caddy:
+    image: caddy:2.8.4
+    restart: unless-stopped
+    depends_on:
+      - app
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-localhost}
+      TLS: ${TLS-tls internal}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:

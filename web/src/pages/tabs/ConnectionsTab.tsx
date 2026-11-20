@@ -17,6 +17,7 @@ import {
   useFolders,
 } from '../../components/folders';
 import { PlacementPicker } from '../../components/placements';
+import { ImportWiresModal } from '../../components/importWires';
 import { ErrorText, Loading, Modal } from '../../components/ui';
 
 export default function ConnectionsTab({ projectId, locked }: { projectId: string; locked: boolean }) {
@@ -34,6 +35,7 @@ export default function ConnectionsTab({ projectId, locked }: { projectId: strin
   const readOnly = locked || !canEdit;
   const [creating, setCreating] = useState(params.get('new') === '1' && !readOnly);
   const [folderForm, setFolderForm] = useState<Folder | 'new' | null>(null);
+  const [importing, setImporting] = useState(false);
   const collapsed = useCollapsed();
   const dnd = useFolderDnd('connections', (id, folderId) => {
     const c = q.data?.find((x) => x.id === id);
@@ -168,6 +170,9 @@ export default function ConnectionsTab({ projectId, locked }: { projectId: strin
             <button className="btn" onClick={() => setFolderForm('new')}>
               + New folder
             </button>
+            <button className="btn" onClick={() => setImporting(true)} title="Add wires from a spreadsheet (CSV)">
+              Import CSV
+            </button>
             <button className="btn btn-primary" onClick={() => setCreating(true)}>
               + New connection
             </button>
@@ -216,6 +221,7 @@ export default function ConnectionsTab({ projectId, locked }: { projectId: strin
           }}
         />
       )}
+      {importing && <ImportWiresModal projectId={projectId} folders={foldersQ.data ?? []} onClose={() => setImporting(false)} />}
       {folderForm && (
         <FolderModal
           projectId={projectId}

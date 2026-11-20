@@ -15,7 +15,11 @@ import {
   type ConnectorType,
   type PcbConnector,
   type PcbDetail,
+  type Pin,
+  type PinRole,
+  PIN_ROLES,
 } from '../api';
+import { parsePinList } from '../pinList';
 import { AutocompleteInput, usePinNameSuggestions } from '../components/autocomplete';
 import { ConnectorConnections } from '../components/connectorConnections';
 import { ConnectorTypeForm } from '../components/forms';
@@ -25,6 +29,7 @@ import { useRecordVisit } from '../recents';
 import { useCan } from '../auth';
 import { useEditSession } from '../components/reason';
 import { HistoryList, useRevertCount } from '../components/history';
+import { Attachments, CommentThread } from '../components/comments';
 import { colorLabel } from '../colors';
 
 // Allow pinch-zoom while a drag is in progress.
@@ -247,6 +252,22 @@ function PcbEditor({ pcb, projectId, types }: { pcb: PcbDetail; projectId: strin
   const [panelId, setPanelId] = useState<string | null>(linkedId);
   const [draft, setDraft] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
   const [creatingTypeFor, setCreatingTypeFor] = useState<string | null>(null);
+  // Find on the photo: connectors whose label, name, type or pin names contain every word.
+  const [find, setFind] = useState(params.get('find') ?? '');
+  const found = useMemo(() => {
+    const words = find.toLowerCase().split(/\s+/).filter(Boolean);
+    if (!words.length) return null;
+    const res = new Map<string, string[]>();
+    for (const r of rects) {
+      const type = types.find((t) => t.id === r.connectorTypeId);
+      const own = [r.label, r.name, type?.name].join(' ').toLowerCase();
+      const pins = r.pins.filter((p) => p.name && words.some((w) => p.name.toLowerCase().includes(w)));
+      if (words.every((w) => own.includes(w) || pins.some((p) => p.name.toLowerCase().includes(w)))) {
+        res.set(r.id, pins.map((p) => `${p.n} ${p.name}`));
+      }
+    }
+    return res;
+  }, [find, rects, types]);
 
   const saver = useConnectorAutosave(
     (id) => rectsRef.current.find((r) => r.id === id),
@@ -537,6 +558,16 @@ function PcbEditor({ pcb, projectId, types }: { pcb: PcbDetail; projectId: strin
               +
             </button>
           </div>
+          <span className="photo-find">
+            <input
+              type="search"
+              value={find}
+              onChange={(e) => setFind(e.target.value)}
+              placeholder="Find connector or pin…"
+              aria-label="Find a connector or pin on the photo"
+            />
+            {found && <span className="small muted nowrap">{found.size} found</span>}
+          </span>
           <SaveIndicator status={saver.status} onRetry={saver.retry} />
           {!frozen && (
             <Link className="btn btn-sm" to={`/projects/${projectId}?tab=connections&new=1`}>
@@ -592,6 +623,8 @@ function PcbEditor({ pcb, projectId, types }: { pcb: PcbDetail; projectId: strin
               {image && <KImage image={image} width={imgW} height={imgH} name="pcb-image" />}
               {rects.map((r) => {
                 const isSel = r.id === selectedId || (mode === 'view' && r.id === panelId);
+                const hit = found?.has(r.id);
+                const dim = !!found && !hit && !isSel;
                 return (
                   <Rect
                     key={r.id}
@@ -600,9 +633,12 @@ function PcbEditor({ pcb, projectId, types }: { pcb: PcbDetail; projectId: strin
                     y={r.y * imgH}
                     width={r.w * imgW}
                     height={r.h * imgH}
-                    stroke={isSel ? '#f97316' : '#22c55e'}
-                    strokeWidth={2 / scale}
-                    fill={isSel ? 'rgba(249,115,22,0.18)' : 'rgba(34,197,94,0.15)'}
+                    stroke={isSel ? '#f97316' : hit ? '#a855f7' : '#22c55e'}
+                    strokeWidth={(hit ? 4 : 2) / scale}
+                    fill={isSel ? 'rgba(249,115,22,0.18)' : hit ? 'rgba(168,85,247,0.25)' : 'rgba(34,197,94,0.15)'}
+                    opacity={dim ? 0.3 : 1}
+                    shadowColor={hit ? '#a855f7' : undefined}
+                    shadowBlur={hit ? 12 / scale : 0}
                     draggable={mode === 'edit'}
                     onClick={() => onRectClick(r.id)}
                     onTap={() => onRectClick(r.id)}
@@ -625,12 +661,22 @@ function PcbEditor({ pcb, projectId, types }: { pcb: PcbDetail; projectId: strin
                   />
                 );
               })}
-              {rects.map((r) => (
-                <Label key={`l-${r.id}`} x={r.x * imgW} y={r.y * imgH - 20 / scale} listening={false}>
-                  <Tag fill="rgba(15,23,42,0.8)" cornerRadius={3 / scale} />
-                  <Text text={connectorDisplayName(r) || '?'} fontSize={12 / scale} padding={3 / scale} fill="#fff" />
-                </Label>
-              ))}
+              {rects.map((r) => {
+                const pins = found?.get(r.id);
+                const text = (connectorDisplayName(r) || '?') + (pins?.length ? `  ·  pin ${pins.join(', pin ')}` : '');
+                return (
+                  <Label
+                    key={`l-${r.id}`}
+                    x={r.x * imgW}
+                    y={r.y * imgH - 20 / scale}
+                    listening={false}
+                    opacity={found && !found.has(r.id) ? 0.35 : 1}
+                  >
+                    <Tag fill={pins ? 'rgba(126,34,206,0.92)' : 'rgba(15,23,42,0.8)'} cornerRadius={3 / scale} />
+                    <Text text={text} fontSize={12 / scale} padding={3 / scale} fill="#fff" />
+                  </Label>
+                );
+              })}
               {draftRect && (
                 <Rect
                   x={draftRect.x}
@@ -715,6 +761,18 @@ function PcbEditor({ pcb, projectId, types }: { pcb: PcbDetail; projectId: strin
         </aside>
       </div>
 
+      <div className="pcb-extras no-print">
+        <section className="panel">
+          <h3>Files</h3>
+          <Attachments pcbId={(frozen && pcb.sourceId) || pcb.id} readOnly={frozen} />
+        </section>
+        <section className="panel">
+          <h3>Comments</h3>
+          <p className="small muted">Shared by every project this component is placed in.</p>
+          <CommentThread entityType="component" entityId={(frozen && pcb.sourceId) || pcb.id} projectId={projectId} />
+        </section>
+      </div>
+
       <section className="panel no-print pcb-history">
         <h3>Recent changes</h3>
         <p className="small muted">This component is shared by every project it is placed in; changes show up in all of them.</p>
@@ -764,7 +822,8 @@ function ConnectorPanel({
   const pinCount = type ? type.pinCount : rect.pins.length;
   const pins = resizePins(rect.pins, pinCount);
 
-  function setPin(n: number, patch: { name?: string; color?: string }) {
+  const [pasting, setPasting] = useState(false);
+  function setPin(n: number, patch: { name?: string; color?: string; current?: number | null; role?: PinRole }) {
     onChange({ pins: pins.map((p) => (p.n === n ? { ...p, ...patch } : p)) });
   }
 
@@ -838,6 +897,8 @@ function ConnectorPanel({
               <th>#</th>
               <th>Pin name</th>
               <th>Cable color</th>
+              <th title="Max current through this pin, in A. Optional; the Build tab checks wire gauges against it.">Max A</th>
+              <th title="What the pin is. Optional; the Build tab checks e.g. that two outputs, or CAN H and CAN L, are not wired together.">Role</th>
             </tr>
           </thead>
           <tbody>
@@ -856,12 +917,47 @@ function ConnectorPanel({
                 <td>
                   <ColorPicker value={p.color} onChange={(v) => setPin(p.n, { color: v })} />
                 </td>
+                <td>
+                  <CurrentInput value={p.current ?? null} onChange={(v) => setPin(p.n, { current: v })} pin={p.n} />
+                </td>
+                <td>
+                  <select
+                    value={p.role ?? ''}
+                    onChange={(e) => setPin(p.n, { role: e.target.value as PinRole })}
+                    aria-label={`Pin ${p.n} role`}
+                    className="role-select"
+                  >
+                    {PIN_ROLES.map((r) => (
+                      <option key={r.key} value={r.key}>
+                        {r.label}
+                      </option>
+                    ))}
+                  </select>
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
       )}
+      {pasting && (
+        <PastePins
+          pinCount={type ? type.pinCount : null}
+          onCancel={() => setPasting(false)}
+          onApply={(list) => {
+            const n = type ? type.pinCount : Math.max(pins.length, ...list.map((p) => p.n));
+            const merged = resizePins(rect.pins, n).map((p) => {
+              const got = list.find((x) => x.n === p.n);
+              return got ? { ...p, ...got } : p;
+            });
+            onChange({ pins: merged });
+            setPasting(false);
+          }}
+        />
+      )}
       <div className="btn-row panel-foot">
+        <button className="btn btn-sm" onClick={() => setPasting(true)} title="Fill pin names from a datasheet or spreadsheet">
+          Paste pin list…
+        </button>
         <button className="btn btn-sm" onClick={onDuplicate}>
           Duplicate
         </button>
@@ -913,6 +1009,7 @@ function ConnectorInfo({
               <th>#</th>
               <th>Pin name</th>
               <th>Color</th>
+              {pins.some((p) => p.current != null) && <th>Max A</th>}
             </tr>
           </thead>
           <tbody>
@@ -925,11 +1022,85 @@ function ConnectorInfo({
                     <Swatch color={p.color} /> {colorLabel(p.color)}
                   </span>
                 </td>
+                {pins.some((x) => x.current != null) && <td>{p.current != null ? `${p.current} A` : ''}</td>}
               </tr>
             ))}
           </tbody>
         </table>
       )}
+    </div>
+  );
+}
+
+/** Max current of a pin in A; empty = not set. Keeps what is typed until it is a number. */
+function CurrentInput({ value, onChange, pin }: { value: number | null; onChange: (v: number | null) => void; pin: number }) {
+  const [text, setText] = useState(value == null ? '' : String(value));
+  useEffect(() => {
+    setText((t) => (Number(t.replace(',', '.')) === value || (t === '' && value == null) ? t : value == null ? '' : String(value)));
+  }, [value]);
+  return (
+    <input
+      className="current-input"
+      inputMode="decimal"
+      value={text}
+      placeholder="—"
+      aria-label={`Pin ${pin} max current in A`}
+      onChange={(e) => {
+        const t = e.target.value;
+        setText(t);
+        if (t.trim() === '') return onChange(null);
+        const n = Number(t.replace(',', '.'));
+        if (Number.isFinite(n) && n >= 0) onChange(n);
+      }}
+    />
+  );
+}
+
+/** Pastes pin names (and optionally color, max current, role) from a datasheet or spreadsheet. */
+function PastePins({
+  pinCount,
+  onCancel,
+  onApply,
+}: {
+  pinCount: number | null;
+  onCancel: () => void;
+  onApply: (pins: (Partial<Pin> & { n: number })[]) => void;
+}) {
+  const [text, setText] = useState('');
+  const parsed = parsePinList(text);
+  const over = pinCount != null ? parsed.pins.filter((p) => p.n > pinCount) : [];
+  return (
+    <div className="paste-pins">
+      <p className="small">
+        One pin per line: number and name, then optionally color, max current (A) and role, separated by tabs, commas,
+        semicolons or spaces. Lines without a number are numbered in order. E.g. <code>1 GND black</code>,{' '}
+        <code>2;24V;red;5A;power</code>, or a column copied from a datasheet.
+      </p>
+      <textarea rows={6} className="mono" value={text} onChange={(e) => setText(e.target.value)} autoFocus />
+      {parsed.pins.length > 0 && (
+        <p className="small muted">
+          {parsed.pins.length} pin(s): {parsed.pins.slice(0, 6).map((p) => `${p.n} ${p.name}`).join(', ')}
+          {parsed.pins.length > 6 && ', …'}
+        </p>
+      )}
+      {over.length > 0 && <p className="small error-text">The connector type has {pinCount} pins; pins above that are left out.</p>}
+      {parsed.errors.map((e, i) => (
+        <p key={i} className="small error-text">
+          {e}
+        </p>
+      ))}
+      <div className="btn-row">
+        <button className="btn btn-sm" onClick={onCancel}>
+          Cancel
+        </button>
+        <button
+          className="btn btn-sm btn-primary"
+          disabled={!parsed.pins.length}
+          onClick={() => onApply(parsed.pins.filter((p) => pinCount == null || p.n <= pinCount))}
+        >
+          Fill {parsed.pins.length || ''} pins
+        </button>
+      </div>
     </div>
   );
 }

@@ -5,6 +5,7 @@ import { api, errorMessage, type Permission } from '../api';
 import { can, useMe } from '../auth';
 import { ErrorText, Loading, Modal } from '../components/ui';
 import { HistoryList } from '../components/history';
+import { NotifySettingsPanel } from '../components/notifySettings';
 import { BackupPanels } from './BackupPage';
 
 interface AdminUser {
@@ -57,6 +58,7 @@ export default function AdminPage() {
           { key: 'users', label: 'Users' },
           { key: 'groups', label: 'Groups & permissions' },
           { key: 'activity', label: 'Activity' },
+          { key: 'notify', label: 'Notifications' },
         ]
       : []),
     ...(can(me, 'backups.manage') ? [{ key: 'backups', label: 'Backups' }] : []),
@@ -87,6 +89,7 @@ export default function AdminPage() {
           <HistoryList filter={{}} showEntity />
         </div>
       )}
+      {tab === 'notify' && <NotifySettingsPanel />}
       {tab === 'backups' && (
         <div className="admin-narrow">
           <BackupPanels />

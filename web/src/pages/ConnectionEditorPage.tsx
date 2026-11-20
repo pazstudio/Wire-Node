@@ -52,7 +52,7 @@ import {
   type ZoneFlowNode,
 } from '../components/zones';
 import { ColorPicker, Loading, Modal, SaveIndicator, Swatch } from '../components/ui';
-import { colorLabel } from '../colors';
+import { colorLabel, suggestedColor } from '../colors';
 import { ProjectCrumb } from '../components/navigation';
 import { useRecordVisit } from '../recents';
 
@@ -310,7 +310,7 @@ function Editor({
         const conns = nodesRef.current.filter(isConnector);
         const a = conns.find((n) => n.id === fromNodeId)?.data.pins.find((p) => p.n === fromPin);
         const b = conns.find((n) => n.id === toNodeId)?.data.pins.find((p) => p.n === toPin);
-        color = a?.color || b?.color || '';
+        color = a?.color || b?.color || suggestedColor(a?.name) || suggestedColor(b?.name);
       }
       const wire: WireModel = {
         id: uuid(),

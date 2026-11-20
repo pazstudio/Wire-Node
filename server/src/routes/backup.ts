@@ -10,6 +10,7 @@ import { Prisma } from '@prisma/client';
 import { linkLegacyNodes, prisma } from '../db.js';
 import { UPLOAD_DIR } from '../storage.js';
 import { buildWiringReport, wiringReportHash } from '../wiringReport.js';
+import { readProjectRows } from '../projectRows.js';
 import { currentUser, need } from '../auth.js';
 import { saveBackupFile } from '../backupStore.js';
 import { restoreFiles } from '../revert.js';
@@ -34,7 +35,10 @@ const FORMAT = 'wire-node-backup';
 //     (frozen copies kept by locked projects); pcbConnectors record sourceId.
 // v7: wiringExports (when each project's wiring summary was last downloaded, and by whom).
 // v8: history (change log) and accounts (groups and users).
-const VERSION = 8;
+// v9: wireChecks (build checklist), checkDismissals, comments, attachments (files on library components).
+// v10: units (machines built from a project; wireChecks record unitId, ok, note), projectMembers
+//      (projects record restricted), projectPcbs record fwAddress.
+const VERSION = 10;
 const MAX_RESTORE_BYTES = 20 * 1024 ** 3; // 20 GB
 
 const TABLES = [
@@ -50,6 +54,11 @@ const TABLES = [
   'wires',
   'zones',
   'wiringExports',
+  'wireChecks',
+  'checkDismissals',
+  'comments',
+  'attachments',
+  'units',
 ] as const;
 type Table = (typeof TABLES)[number];
 type Rows = Record<Table, Record<string, unknown>[]>;
@@ -64,7 +73,7 @@ const BackupSchema = z.object({
     Object.fromEntries(TABLES.map((t) => [t, RowList])) as Record<Table, typeof RowList>,
   ),
   history: RowList,
-  accounts: z.object({ groups: RowList, users: RowList }).default({}),
+  accounts: z.object({ groups: RowList, users: RowList, projectMembers: RowList }).default({}),
 });
 
 export class HttpError extends Error {
@@ -75,7 +84,7 @@ export class HttpError extends Error {
 
 export async function readAll(): Promise<Rows> {
   // One repeatable-read transaction, so the snapshot is consistent.
-  const [projects, cables, connectorTypes, pcbs, folders, projectPcbs, pcbConnectors, connections, connectionNodes, wires, zones, wiringExports] =
+  const [projects, cables, connectorTypes, pcbs, folders, projectPcbs, pcbConnectors, connections, connectionNodes, wires, zones, wiringExports, wireChecks, checkDismissals, comments, attachments, units] =
     await prisma.$transaction(
       [
         prisma.project.findMany(),
@@ -90,6 +99,11 @@ export async function readAll(): Promise<Rows> {
         prisma.wire.findMany(),
         prisma.zone.findMany(),
         prisma.wiringExport.findMany(),
+        prisma.wireCheck.findMany(),
+        prisma.checkDismissal.findMany(),
+        prisma.comment.findMany(),
+        prisma.attachment.findMany(),
+        prisma.unit.findMany(),
       ],
       { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
     );
@@ -106,6 +120,11 @@ export async function readAll(): Promise<Rows> {
     wires,
     zones,
     wiringExports,
+    wireChecks,
+    checkDismissals,
+    comments,
+    attachments,
+    units,
   } as Rows;
 }
 
@@ -121,6 +140,9 @@ function referencedFiles(rows: Rows): string[] {
       const v = r[key];
       if (typeof v === 'string' && v) names.add(path.basename(v));
     }
+  }
+  for (const a of rows.attachments ?? []) {
+    if (typeof a.storedPath === 'string' && a.storedPath) names.add(path.basename(a.storedPath));
   }
   return [...names];
 }
@@ -149,10 +171,11 @@ function isAllowedEntry(p: string, entry: { type?: string }) {
 /** Builds a complete backup archive. The returned stream has to be consumed (piped somewhere). */
 export async function createBackupArchive(log: FastifyBaseLogger) {
   const rows = await readAll();
-  const [history, groups, users] = await prisma.$transaction([
+  const [history, groups, users, projectMembers] = await prisma.$transaction([
     prisma.changeLog.findMany({ orderBy: { createdAt: 'asc' } }),
     prisma.group.findMany(),
     prisma.user.findMany(),
+    prisma.projectMember.findMany(),
   ]);
   // Also old pictures the history can revert to.
   const files = [...new Set([...referencedFiles(rows), ...restoreFiles(history)])];
@@ -176,7 +199,7 @@ export async function createBackupArchive(log: FastifyBaseLogger) {
     missingFiles,
     data: rows,
     history,
-    accounts: { groups, users },
+    accounts: { groups, users, projectMembers },
   };
   archive.append(JSON.stringify(manifest), { name: 'wire-node.json' });
   const usedNames = new Set<string>();
@@ -189,6 +212,60 @@ export async function createBackupArchive(log: FastifyBaseLogger) {
   for (const f of present) archive.file(path.join(UPLOAD_DIR, f), { name: `uploads/${f}` });
   void archive.finalize();
   return archive;
+}
+
+/**
+ * Checks that a backup file can be restored, without restoring it: the archive unpacks, the
+ * manifest is valid, its row counts match, and every picture and attached file it needs is inside.
+ */
+export async function verifyBackupFile(archivePath: string) {
+  const entries = new Set<string>();
+  let manifest = '';
+  try {
+    await tar.t({
+      file: archivePath,
+      strict: true,
+      onReadEntry: (entry) => {
+        const p = entry.path.replace(/\\/g, '/').replace(/^\.\//, '');
+        entries.add(p);
+        if (p === 'wire-node.json') {
+          const chunks: Buffer[] = [];
+          entry.on('data', (c: Buffer) => chunks.push(c));
+          entry.on('end', () => (manifest = Buffer.concat(chunks).toString('utf8')));
+        } else entry.resume();
+      },
+    });
+  } catch (err) {
+    return { ok: false as const, error: `The archive cannot be read: ${err instanceof Error ? err.message : String(err)}` };
+  }
+  if (!manifest) return { ok: false as const, error: 'wire-node.json is missing' };
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(manifest);
+  } catch {
+    return { ok: false as const, error: 'wire-node.json is not valid JSON' };
+  }
+  const result = BackupSchema.safeParse(parsed);
+  if (!result.success) return { ok: false as const, error: `wire-node.json is not valid: ${result.error.issues[0]?.message ?? ''}` };
+  const backup = result.data;
+  const rows = backup.data as Rows;
+  const declared = (parsed as { counts?: Record<string, number> }).counts ?? {};
+  for (const t of TABLES) {
+    if (declared[t] !== undefined && declared[t] !== rows[t].length) {
+      return { ok: false as const, error: `${t}: ${rows[t].length} rows, but the manifest says ${declared[t]}` };
+    }
+  }
+  const declaredMissing = new Set(((parsed as { missingFiles?: string[] }).missingFiles ?? []).map(String));
+  const needed = [...new Set([...referencedFiles(rows), ...restoreFiles(backup.history)])];
+  const missing = needed.filter((f) => !entries.has(`uploads/${f}`) && !declaredMissing.has(f));
+  if (missing.length) return { ok: false as const, error: `${missing.length} file(s) missing from the archive, e.g. ${missing[0]}` };
+  return {
+    ok: true as const,
+    version: backup.version,
+    exportedAt: backup.exportedAt,
+    counts: { projects: rows.projects.length, connections: rows.connections.length, wires: rows.wires.length, files: needed.length },
+    missingOnServer: declaredMissing.size,
+  };
 }
 
 /** Adds the backup's groups and users that this server does not have; returns how many accounts were added. */
@@ -309,6 +386,12 @@ export async function restoreBackupFile(archivePath: string, replace: boolean, l
       async (tx) => {
         await tx.changeLog.deleteMany();
         await tx.wiringExport.deleteMany();
+        await tx.wireCheck.deleteMany();
+        await tx.checkDismissal.deleteMany();
+        await tx.comment.deleteMany();
+        await tx.attachment.deleteMany();
+        await tx.unit.deleteMany();
+        await tx.projectMember.deleteMany();
         await tx.wire.deleteMany();
         await tx.connectionNode.deleteMany();
         await tx.connection.deleteMany();
@@ -336,9 +419,23 @@ export async function restoreBackupFile(archivePath: string, replace: boolean, l
         await create('wires', (data) => tx.wire.createMany({ data }));
         await create('zones', (data) => tx.zone.createMany({ data }));
         await create('wiringExports', (data) => tx.wiringExport.createMany({ data }));
+        await create('wireChecks', (data) => tx.wireCheck.createMany({ data }));
+        await create('checkDismissals', (data) => tx.checkDismissal.createMany({ data }));
+        await create('comments', (data) => tx.comment.createMany({ data }));
+        await create('attachments', (data) => tx.attachment.createMany({ data }));
+        await create('units', (data) => tx.unit.createMany({ data }));
         await linkLegacyNodes(tx);
 
         accountsAdded = await mergeAccounts(tx, backup.accounts);
+        // Members of restricted projects, for the accounts that exist on this server.
+        if (backup.accounts.projectMembers.length) {
+          const userIds = new Set((await tx.user.findMany({ select: { id: true } })).map((u) => u.id));
+          const projectIds = new Set(rows.projects.map((p) => String(p.id)));
+          const data = backup.accounts.projectMembers
+            .map((m) => ({ projectId: String(m.projectId ?? ''), userId: String(m.userId ?? '') }))
+            .filter((m) => projectIds.has(m.projectId) && userIds.has(m.userId));
+          if (data.length) await tx.projectMember.createMany({ data, skipDuplicates: true });
+        }
         if (backup.history.length) {
           const userIds = new Set((await tx.user.findMany({ select: { id: true } })).map((u) => u.id));
           await tx.changeLog.createMany({
@@ -401,7 +498,7 @@ export default async function backupRoutes(app: FastifyInstance) {
   // Each download is recorded, so the project page can tell whether the project changed since.
   app.get<{ Params: { id: string } }>('/api/projects/:id/wiring.md', async (req, reply) => {
     const user = currentUser(req);
-    const rows = await readAll();
+    const rows = await readProjectRows(req.params.id);
     const md = buildWiringReport(rows, req.params.id);
     if (md === null) return reply.code(404).send({ message: 'Not found' });
     await prisma.wiringExport.create({
@@ -418,7 +515,7 @@ export default async function backupRoutes(app: FastifyInstance) {
   // Last download of the wiring summary, and whether the summary would read differently now.
   app.get<{ Params: { id: string } }>('/api/projects/:id/wiring-export', async (req, reply) => {
     const [rows, last] = await Promise.all([
-      readAll(),
+      readProjectRows(req.params.id),
       prisma.wiringExport.findFirst({ where: { projectId: req.params.id }, orderBy: { exportedAt: 'desc' } }),
     ]);
     const hash = wiringReportHash(rows, req.params.id);

@@ -1,0 +1,10 @@
+# Used by docker-compose.https.yml. SITE_ADDRESS and TLS come from the environment.
+{$SITE_ADDRESS} {
+	{$TLS}
+	encode gzip
+	# Large backups can be restored through the browser.
+	request_body {
+		max_size 20GB
+	}
+	reverse_proxy app:8080
+}

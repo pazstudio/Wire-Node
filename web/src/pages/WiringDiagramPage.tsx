@@ -12,6 +12,7 @@ import { ProjectCrumb } from '../components/navigation';
 import { useRecordVisit } from '../recents';
 import { useCan } from '../auth';
 import { HistoryList, useRevertCount } from '../components/history';
+import { CommentThread } from '../components/comments';
 
 const diagramNodeTypes = { ...nodeTypes, zone: ZoneNode };
 const isConnector = (n: ConnFlowNode | ZoneFlowNode): n is ConnFlowNode => n.type === 'connector';
@@ -137,6 +138,11 @@ function Diagram({ projectId, conn }: { projectId: string; conn: Connection }) {
             </tbody>
           </table>
         </div>
+      </section>
+
+      <section className="panel no-print">
+        <h3>Comments</h3>
+        <CommentThread entityType="connection" entityId={conn.id} projectId={conn.projectId} />
       </section>
 
       <section className="panel no-print">

@@ -2,6 +2,8 @@ import { createContext, useContext, useEffect, useRef, useState, type FormEvent,
 import { Link, useLocation } from 'react-router-dom';
 import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { api, errorMessage, SIGNED_OUT_EVENT, type Me, type Permission } from './api';
+import { ApiTokensModal } from './components/apiTokens';
+import { readTheme, setTheme, type ThemeChoice } from './theme';
 import { ErrorText, Modal } from './components/ui';
 
 /**
@@ -207,6 +209,7 @@ function SignOutButton({ className }: { className: string }) {
         try {
           await api.post('/api/auth/logout', {});
         } finally {
+          navigator.serviceWorker?.controller?.postMessage('clear-api-cache');
           switchAccount(qc, null);
         }
       }}
@@ -221,6 +224,7 @@ export function UserMenu() {
   const me = useMe();
   const [open, setOpen] = useState(false);
   const [changing, setChanging] = useState(false);
+  const [tokens, setTokens] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const location = useLocation();
   const admin = can(me, 'users.manage') || can(me, 'backups.manage');
@@ -273,15 +277,50 @@ export function UserMenu() {
             </span>
             Change password
           </button>
+          <button className="menu-item menu-item-btn" role="menuitem" onClick={() => (setOpen(false), setTokens(true))}>
+            <span className="qs-icon" aria-hidden>
+              ⌘
+            </span>
+            API tokens
+          </button>
+          <ThemeSwitch />
           <SignOutButton className="menu-item menu-item-btn" />
         </div>
       )}
+      {tokens && <ApiTokensModal onClose={() => setTokens(false)} />}
       {changing && (
         <Modal title="Change password" onClose={() => setChanging(false)}>
           <p className="small muted">Your other browsers and devices are signed out.</p>
           <PasswordForm onDone={() => setChanging(false)} submitLabel="Change password" />
         </Modal>
       )}
+    </div>
+  );
+}
+
+/** Auto / Light / Dark, in the user menu. */
+function ThemeSwitch() {
+  const [theme, set] = useState<ThemeChoice>(readTheme);
+  return (
+    <div className="menu-item theme-switch" role="group" aria-label="Theme">
+      <span className="qs-icon" aria-hidden>
+        ◐
+      </span>
+      <span className="seg">
+        {(['auto', 'light', 'dark'] as ThemeChoice[]).map((t) => (
+          <button
+            key={t}
+            type="button"
+            className={theme === t ? 'active' : ''}
+            onClick={() => {
+              setTheme(t);
+              set(t);
+            }}
+          >
+            {t === 'auto' ? 'Auto' : t === 'light' ? 'Light' : 'Dark'}
+          </button>
+        ))}
+      </span>
     </div>
   );
 }

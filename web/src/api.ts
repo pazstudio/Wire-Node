@@ -7,6 +7,8 @@ export interface Project {
   description: string;
   /** Set while the project is locked (e.g. the device shipped); a locked project cannot be changed. */
   lockedAt: string | null;
+  /** Only members and admins can see it. */
+  restricted?: boolean;
   createdAt: string;
   updatedAt: string;
   _count?: { pcbs: number; connections: number };
@@ -39,6 +41,8 @@ export interface Placement {
   mapY: number;
   /** Folder on the Components tab; null = not in a folder. */
   folderId: string | null;
+  /** Board address for the firmware export ("1" = CAN expansion board…; "" = main board). */
+  fwAddress?: string;
   pcb: Pcb;
 }
 
@@ -67,7 +71,24 @@ export interface Pin {
   n: number;
   name: string;
   color: string;
+  /** Max current of the pin in A (optional), used by the design checks. */
+  current?: number | null;
+  /** What the pin is (optional), used by the design checks. */
+  role?: PinRole;
 }
+
+export type PinRole = '' | 'power' | 'ground' | 'input' | 'output' | 'bidir' | 'can_h' | 'can_l' | 'shield';
+export const PIN_ROLES: { key: PinRole; label: string }[] = [
+  { key: '', label: '—' },
+  { key: 'power', label: 'Power' },
+  { key: 'ground', label: 'Ground' },
+  { key: 'input', label: 'Input' },
+  { key: 'output', label: 'Output' },
+  { key: 'bidir', label: 'In/out' },
+  { key: 'can_h', label: 'CAN H' },
+  { key: 'can_l', label: 'CAN L' },
+  { key: 'shield', label: 'Shield' },
+];
 
 /** Board fields used to show where a connector sits on the component photo. */
 export interface PcbPreview {
@@ -382,4 +403,226 @@ export function resizePins(pins: Pin[], n: number): Pin[] {
     const existing = pins.find((p) => p.n === i + 1);
     return existing ?? { n: i + 1, name: '', color: '' };
   });
+}
+
+// ---------- Build: parts, checks, checklist ----------
+
+export interface BuildList {
+  projectName: string;
+  wireCount: number;
+  cutList: {
+    gauge: string;
+    color: string;
+    shielded: boolean;
+    count: number;
+    totalMm: number;
+    missingLength: number;
+    wires: { ref: string; connection: string; from: string; to: string; lengthMm: number | null }[];
+  }[];
+  cables: {
+    cableId: string;
+    name: string;
+    gauge: string;
+    coreCount: number;
+    shielded: boolean;
+    pieces: { connection: string; lengthMm: number | null; coresUsed: number }[];
+    totalMm: number;
+    missingLength: number;
+  }[];
+  parts: { kind: 'housing' | 'crimp' | 'splice'; name: string; count: number; where: string[] }[];
+  wiresWithoutGauge: number;
+}
+
+export type Severity = 'error' | 'warning' | 'info';
+
+export interface DesignIssue {
+  /** Identifies the finding, for dismissing it. */
+  key: string;
+  severity: Severity;
+  code: string;
+  title: string;
+  items: string[];
+  connectionId?: string;
+  /** Connections the finding is in, when it spans wires (a net can run through several). */
+  connections?: { id: string; name: string }[];
+  placementId?: string;
+  pcbId?: string;
+  /** Set on findings marked as intended. */
+  dismissal?: { note: string; by: string; at: string };
+}
+
+export interface NetInfo {
+  id: string;
+  names: string[];
+  ends: string[];
+  wires: number;
+  maxCurrent: number | null;
+}
+
+export interface CheckResult {
+  /** Open findings (counted). */
+  issues: DesignIssue[];
+  /** Findings marked as intended. */
+  dismissed: DesignIssue[];
+  counts: Record<Severity, number>;
+  nets: NetInfo[];
+}
+
+export interface WireEnd {
+  nodeId: string;
+  pin: number;
+  placementId: string | null;
+  placementName: string;
+  connector: string;
+  connectorPurpose: string;
+  pinName: string;
+  inline: boolean;
+  /** Same for every end on one physical connector. */
+  connectorKey: string;
+  text: string;
+  short: string;
+}
+
+/** What a cable maker needs about one connector: type, crimp and every cavity. */
+export interface ConnectorDetails {
+  key: string;
+  inline: boolean;
+  type: { name: string; pinCount: number; rowCount: number; crimpName: string } | null;
+  pins: { n: number; name: string }[];
+}
+
+export interface CheckTick {
+  doneAt: string;
+  doneBy: string;
+  /** The wire changed after it was ticked. */
+  stale: boolean;
+  /** For "tested": false = the test failed. */
+  ok: boolean;
+  note: string;
+  /** Made on this device while offline, not sent yet. */
+  pending?: boolean;
+}
+
+export interface ProjectWire {
+  id: string;
+  ref: string;
+  connectionId: string;
+  connectionName: string;
+  from: WireEnd;
+  to: WireEnd;
+  color: string;
+  gauge: string;
+  shielded: boolean;
+  lengthMm: number | null;
+  cableName: string;
+  coreIndex: number | null;
+  note: string;
+  net: string | null;
+  crimped: CheckTick | null;
+  tested: CheckTick | null;
+}
+
+export interface ProjectWires {
+  /** Unit the ticks are of; "" = the project itself. */
+  unitId: string;
+  connections: { id: string; name: string; folderId: string | null }[];
+  wires: ProjectWire[];
+  nets: { id: string; names: string[] }[];
+  connectors: Record<string, ConnectorDetails>;
+}
+
+export interface BuildStatus {
+  checks: Record<Severity, number>;
+  wires: number;
+  crimped: number;
+  tested: number;
+  failed: number;
+}
+
+export type UnitStatus = 'building' | 'tested' | 'shipped' | 'retired';
+
+/** A machine built from a project, with its own checklist. */
+export interface Unit {
+  id: string;
+  projectId: string;
+  serial: string;
+  notes: string;
+  status: UnitStatus;
+  createdAt: string;
+  wires: number;
+  crimped: number;
+  tested: number;
+  failed: number;
+}
+
+/** Downloads text as a file. */
+export function downloadText(name: string, text: string, type = 'text/plain;charset=utf-8') {
+  const url = URL.createObjectURL(new Blob([text], { type }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/** CSV with a BOM so Excel reads UTF-8; values quoted when needed. */
+export function toCsv(rows: (string | number | null | undefined)[][]): string {
+  const cell = (v: string | number | null | undefined) => {
+    const s = v == null ? '' : String(v);
+    return /[",\n;]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  return '﻿' + rows.map((r) => r.map(cell).join(',')).join('\r\n') + '\r\n';
+}
+
+/** File-name friendly slug, e.g. "RC4 prototype" -> "rc4-prototype". */
+export function slug(s: string) {
+  return (
+    s
+      .normalize('NFKD')
+      .replace(/[̀-ͯ]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 80) || 'project'
+  );
+}
+
+export interface ProjectDiff {
+  a: { id: string; name: string };
+  b: { id: string; name: string };
+  components: { added: string[]; removed: string[]; changed: string[] };
+  connections: { name: string; status: 'added' | 'removed' | 'changed'; lines: string[] }[];
+  total: number;
+}
+
+// ---------- Comments and attachments ----------
+
+export interface CommentDto {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  projectId: string | null;
+  entityType: 'connection' | 'component' | 'project' | 'unit';
+  entityId: string;
+  userId: string | null;
+  userName: string;
+  body: string;
+  mentions: string[];
+  resolvedAt: string | null;
+  resolvedBy: string | null;
+}
+
+export interface MentionDto extends CommentDto {
+  entityName: string;
+  projectName: string;
+}
+
+export interface Attachment {
+  id: string;
+  pcbId: string;
+  fileName: string;
+  mimeType: string;
+  size: number;
+  createdAt: string;
+  uploadedBy: string;
 }

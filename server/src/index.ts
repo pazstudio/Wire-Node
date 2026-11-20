@@ -15,10 +15,15 @@ import connectionRoutes from './routes/connections.js';
 import mapRoutes from './routes/map.js';
 import backupRoutes from './routes/backup.js';
 import adminRoutes from './routes/admin.js';
+import buildRoutes from './routes/build.js';
+import importRoutes from './routes/importWires.js';
+import commentRoutes from './routes/comments.js';
 import historyRoutes from './history.js';
 import revertRoutes from './revert.js';
 import backupStoreRoutes, { startBackupScheduler } from './backupStore.js';
-import { ensureAccounts, registerAuth } from './auth.js';
+import { ensureAccounts, registerAuth, tokenRoutes } from './auth.js';
+import { accessRoutes, registerProjectAccess } from './projectAccess.js';
+import { notifyRoutes } from './notify.js';
 
 const PORT = Number(process.env.PORT ?? 8080);
 const PUBLIC_DIR = path.resolve(process.env.PUBLIC_DIR ?? 'public');
@@ -45,6 +50,8 @@ await app.register(multipart, { limits: { fileSize: 40 * 1024 * 1024, files: 1, 
 // Every /api and /uploads request needs a signed-in account (see auth.ts). Registered before all
 // routes, on the root instance, so it covers every one of them.
 await registerAuth(app);
+// Restricted projects are hidden from non-members (see projectAccess.ts). Also on the root instance.
+await registerProjectAccess(app);
 
 // Uploaded images (file names are UUIDs and never reused, so they can be cached forever).
 await app.register(fastifyStatic, {
@@ -66,6 +73,12 @@ await app.register(mapRoutes);
 await app.register(backupRoutes);
 await app.register(backupStoreRoutes);
 await app.register(adminRoutes);
+await app.register(buildRoutes);
+await app.register(importRoutes);
+await app.register(commentRoutes);
+await app.register(tokenRoutes);
+await app.register(accessRoutes);
+await app.register(notifyRoutes);
 await app.register(historyRoutes);
 await app.register(revertRoutes);
 

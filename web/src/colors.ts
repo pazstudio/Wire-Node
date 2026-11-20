@@ -47,3 +47,18 @@ export function withAlpha(hex: string, alpha: number): string {
   const n = parseInt(m[1], 16);
   return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
 }
+
+/**
+ * Usual wire color for a pin name, used for a new wire when neither its cable nor its pins give
+ * one: ground black, supply rails red, mains PE green/yellow, N blue, L brown. Empty if none.
+ */
+export function suggestedColor(pinName: string | null | undefined): string {
+  const n = (pinName ?? '').trim().toUpperCase().replace(/\s+/g, '');
+  if (!n) return '';
+  if (/^(PE|EARTH|PGND?E?|FG)$/.test(n)) return 'green/yellow';
+  if (/^(N|NEUTRAL)$/.test(n)) return 'blue';
+  if (/^(L|L1|LINE)$/.test(n)) return 'brown';
+  if (/^(?:[AP]?GND|GROUND|0V|V-|VSS|COM-?)\d*$/.test(n)) return 'black';
+  if (/^(?:\+?\d+(?:\.\d+)?V(?:DC)?|\+?\d+V\d+|V\+|VCC|VDD|VIN|VMOT|VBUS|VBAT|\+)\d*$/.test(n)) return 'red';
+  return '';
+}

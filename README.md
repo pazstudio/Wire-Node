@@ -19,6 +19,18 @@ Made by Zdeněk Pazourek. MIT license.
 - **Wiring summary**: a Markdown file of the whole project (e.g. to give to an AI assistant for firmware config).
   The project page shows when the wiring changed since the last export.
 - **Lock a project** (e.g. once the machine shipped): it keeps a frozen copy of everything it uses.
+- **Build tab**: design checks (shorts between supplies, wires too thin for their current, missing gauges or
+  lengths), a bill of materials and cut list (CSV / print), a shared checklist to tick wires as crimped and
+  tested, printable wire labels and harness tags with QR codes, and a list of nets.
+- **Compare** a project with another one (e.g. the previous revision), and **import wires from CSV**.
+- **Comments** with @mentions on connections, components and projects, and **files** (datasheets, pinouts) on
+  components.
+- **Read-only API tokens** for scripts, a **dark theme**, and offline viewing when served over HTTPS.
+- **Units** (machines built from a project) with their own checklist and test results, and a **test mode** for
+  phones that also works without a connection.
+- **Harness drawings** (SVG / print), a **draft firmware config** (RepRapFirmware or Klipper), pin roles and
+  voltage-drop checks, bulk wire editing, **restricted projects**, **webhook notifications** and a restore test
+  of every automatic backup.
 - **Accounts, groups and permissions**, a **history** of every change with the reason for it, and **revert**.
 - **Backups**: download or restore in the browser, plus automatic backups on a schedule.
 - Works on phones and tablets (touch, pinch-zoom), with a quick switcher (Ctrl K) and keyboard shortcuts (?).
@@ -47,6 +59,26 @@ POSTGRES_PASSWORD=choose-something-long
 
 > If `docker compose up --build` fails on your Docker version, build the image separately instead:
 > `docker build -t wire-node-app:latest .` and then `docker compose up -d --no-build`.
+
+### HTTPS
+
+Optional, with [Caddy](https://caddyserver.com) in front of the app. HTTPS lets phones keep pages for offline
+viewing and install Wire-Node as an app.
+
+```sh
+docker compose -f docker-compose.yml -f docker-compose.https.yml up -d
+```
+
+Set `SITE_ADDRESS` (e.g. in `.env`) to how people reach the server:
+
+- **A domain name** pointing at the server, reachable from the internet on ports 80 and 443:
+  `SITE_ADDRESS=wiring.example.com` and `TLS=` (empty). Caddy gets a Let's Encrypt certificate.
+- **A LAN address or name**: `SITE_ADDRESS=192.168.1.50`. Caddy makes its own certificate (`tls internal`).
+  Browsers trust it once its root certificate is installed on each device: copy it out with
+  `docker compose -f docker-compose.yml -f docker-compose.https.yml cp caddy:/data/caddy/pki/authorities/local/root.crt .`
+  and install `root.crt` as a trusted certificate (Windows: double-click → Install → "Trusted Root Certification
+  Authorities"; Android: Settings → Security → Install certificate; iOS: open it, then enable it under Settings →
+  General → About → Certificate Trust Settings).
 
 ### Where the data lives
 
@@ -153,6 +185,25 @@ npm run dev
 
 Checks: `npm run typecheck` in both folders, `npm test` in `server`.
 
+## Notifications
+
+In the Admin panel → **Notifications**, paste an incoming-webhook URL from Slack, Microsoft Teams, Discord, ntfy or
+anything that accepts a JSON POST with a `text` field, and choose what to send: @mentions, new comments, failed wire
+tests, failed backups. **Send a test message** checks it.
+
+## API tokens
+
+For scripts, e.g. pulling the wiring summary in a firmware CI job, create a token in the user menu
+(**API tokens**) and send it as a bearer token. Tokens are read-only and never get admin rights.
+
+```sh
+curl -H "Authorization: Bearer wn_..." http://SERVER:8080/api/projects
+curl -H "Authorization: Bearer wn_..." -o wiring.md http://SERVER:8080/api/projects/PROJECT-ID/wiring.md
+curl -H "Authorization: Bearer wn_..." http://SERVER:8080/api/projects/PROJECT-ID/checks
+curl -H "Authorization: Bearer wn_..." http://SERVER:8080/api/projects/PROJECT-ID/build-list
+curl -H "Authorization: Bearer wn_..." "http://SERVER:8080/api/projects/PROJECT-ID/firmware?format=rrf"
+```
+
 ## How it works
 
 In the app, "components" are PCBs, motors, power supplies or any other part with connectors.
@@ -175,6 +226,10 @@ Internally (database tables, API paths such as `/api/pcbs`) they are still calle
 - **Auth** is in `server/src/auth.ts`. Every `/api` and `/uploads` request needs a session, except sign-in and health.
   Passwords are hashed with scrypt, and only a SHA-256 of each session token is stored. Requests that change data and
   come from another site (by the `Origin` header) are refused.
+- **Build tools** (`projectModel.ts`) resolve every wire's ends, color, gauge and length and group pins into
+  nets; the build list (`buildList.ts`), design checks (`designChecks.ts`) and project comparison
+  (`compareProjects.ts`) are built on it. Checklist ticks store a fingerprint of the wire, so a moved wire is
+  flagged instead of staying ticked.
 - **History** entries store the item's database rows from before the change (`history.ts`). The readable list of what
   changed is computed from that snapshot (`historyDiff.ts`), and revert (`revert.ts`) writes it back.
 

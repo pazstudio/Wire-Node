@@ -50,6 +50,7 @@ export default function ProjectsPage() {
             <Link to={`/projects/${p.id}`} className="card-main">
               <h3>
                 {p.name} {p.lockedAt && <span className="badge badge-locked">🔒 Locked</span>}
+                {p.restricted && <span className="badge" title="Only its members and admins can see it">👥 Restricted</span>}
               </h3>
               {p.machine && <div className="muted">{p.machine}</div>}
               {p.description && <p className="small">{p.description}</p>}

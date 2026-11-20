@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, errorMessage, imgUrl, type ConnectorType } from '../../api';
 import { ConnectorTypeForm } from '../../components/forms';
+import { ConnectorTemplatesModal } from '../../components/connectorTemplates';
 import { useCan } from '../../auth';
 import { Loading } from '../../components/ui';
 
@@ -9,6 +10,7 @@ export default function ConnectorsTab() {
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ['connectorTypes'], queryFn: () => api.get<ConnectorType[]>('/api/connector-types') });
   const [editing, setEditing] = useState<ConnectorType | 'new' | null>(null);
+  const [templates, setTemplates] = useState(false);
   const canEdit = useCan('library.edit');
   const canDelete = useCan('library.delete');
 
@@ -32,9 +34,14 @@ export default function ConnectorsTab() {
     <section>
       <div className="section-head">
         <p className="muted small">Connectors are shared between all projects. Click a row to edit.</p>
-        <button className="btn btn-primary" onClick={() => setEditing('new')} hidden={!canEdit}>
-          + New connector
-        </button>
+        <div className="btn-row" hidden={!canEdit}>
+          <button className="btn" onClick={() => setTemplates(true)}>
+            Add common connectors…
+          </button>
+          <button className="btn btn-primary" onClick={() => setEditing('new')}>
+            + New connector
+          </button>
+        </div>
       </div>
       {q.data.length === 0 ? (
         <p className="empty">No connectors yet.</p>
@@ -93,6 +100,7 @@ export default function ConnectorsTab() {
           }}
         />
       )}
+      {templates && <ConnectorTemplatesModal existing={q.data} onClose={() => setTemplates(false)} />}
     </section>
   );
 }

@@ -5,6 +5,7 @@ import { assertUnlocked, duplicateProject, lockProject, unlockProject } from '..
 import { pcbPreviewSelect } from './connections.js';
 import { need, type AuthUser } from '../auth.js';
 import { logChange, requireReason } from '../history.js';
+import { hiddenProjectIds } from '../projectAccess.js';
 
 const ProjectBody = z.object({
   name: z.string().trim().min(1, 'Name is required'),
@@ -103,12 +104,14 @@ export async function logPlacement(user: AuthUser, placementId: string, action: 
 }
 
 export default async function projectRoutes(app: FastifyInstance) {
-  app.get('/api/projects', async () =>
-    prisma.project.findMany({
+  app.get('/api/projects', async (req) => {
+    const hidden = [...(await hiddenProjectIds(req))];
+    return prisma.project.findMany({
+      where: hidden.length ? { id: { notIn: hidden } } : {},
       orderBy: { updatedAt: 'desc' },
       include: { _count: { select: { pcbs: true, connections: true } } },
-    }),
-  );
+    });
+  });
 
   app.post('/api/projects', async (req, reply) => {
     const user = need(req, 'projects.create');
@@ -193,7 +196,13 @@ export default async function projectRoutes(app: FastifyInstance) {
   app.patch<P>('/api/project-pcbs/:id', async (req, reply) => {
     need(req, 'projects.edit');
     const data = z
-      .object({ mapX: z.number(), mapY: z.number(), name: PlacementNameField, folderId: z.string().nullable() })
+      .object({
+        mapX: z.number(),
+        mapY: z.number(),
+        name: PlacementNameField,
+        folderId: z.string().nullable(),
+        fwAddress: z.string().trim().max(40),
+      })
       .partial()
       .parse(req.body);
     const existing = await prisma.projectPcb.findUniqueOrThrow({ where: { id: req.params.id }, include: { pcb: true } });

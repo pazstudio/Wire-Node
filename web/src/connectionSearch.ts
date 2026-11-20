@@ -13,6 +13,9 @@ export interface NodeHit {
   /** e.g. "1LC Duet - Master › IO1 · syringe empty" */
   name: string;
   pins: PinHit[];
+  /** On a component: where to show it on the photo. */
+  pcbId?: string;
+  connectorId?: string;
 }
 
 export interface SearchResult {
@@ -108,6 +111,8 @@ export function searchConnections(connections: Connection[], folders: Folder[], 
     const hits: NodeHit[] = top.map(({ n, pins }) => ({
       nodeId: n.id,
       name: nodeName(n),
+      pcbId: n.pcbConnector?.pcbId,
+      connectorId: n.pcbConnector?.id,
       pins: pins.map((p) => ({
         n: p.n,
         name: p.name,

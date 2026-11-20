@@ -5,6 +5,7 @@ import { assertNotFrozen, assertUnlocked } from '../freeze.js';
 import { deleteFiles, readMultipart, saveImage } from '../storage.js';
 import { assertComponentFolder, assertPlacementNameFree, logPlacement, PlacementNameField, placePcb } from './projects.js';
 import { need } from '../auth.js';
+import { hiddenProjectIds } from '../projectAccess.js';
 import { logChange, recordEdit, requireReason } from '../history.js';
 
 const PcbFields = z.object({
@@ -16,6 +17,10 @@ const PinSchema = z.object({
   n: z.number().int().min(1),
   name: z.string().default(''),
   color: z.string().default(''),
+  /** Max current of the pin in A (optional), used by the design checks. */
+  current: z.number().nonnegative().max(10000).nullable().optional(),
+  /** What the pin is (optional), used by the design checks. */
+  role: z.enum(['', 'power', 'ground', 'input', 'output', 'bidir', 'can_h', 'can_l', 'shield']).optional(),
 });
 
 const ConnectorBody = z.object({
@@ -47,16 +52,18 @@ async function assertLibraryNameFree(name: string, exceptId?: string) {
 }
 
 export default async function pcbRoutes(app: FastifyInstance) {
-  app.get('/api/pcbs', async () =>
-    prisma.pcb.findMany({
+  app.get('/api/pcbs', async (req) => {
+    const hidden = await hiddenProjectIds(req);
+    const pcbs = await prisma.pcb.findMany({
       where: { frozenInProjectId: null },
       orderBy: { name: 'asc' },
       include: {
         _count: { select: { connectors: true } },
         projects: { select: { project: { select: { id: true, name: true } } }, distinct: ['projectId'] },
       },
-    }),
-  );
+    });
+    return hidden.size ? pcbs.map((p) => ({ ...p, projects: p.projects.filter((x) => !hidden.has(x.project.id)) })) : pcbs;
+  });
 
   app.post('/api/pcbs', async (req, reply) => {
     const user = need(req, 'library.edit');
@@ -141,8 +148,9 @@ export default async function pcbRoutes(app: FastifyInstance) {
       select: { project: { select: { name: true } } },
       distinct: ['projectId'],
     });
+    const attachments = await prisma.attachment.findMany({ where: { pcbId: req.params.id }, select: { storedPath: true } });
     const pcb = await prisma.pcb.delete({ where: { id: req.params.id } });
-    await deleteFiles(pcb.imagePath, pcb.thumbPath);
+    await deleteFiles(pcb.imagePath, pcb.thumbPath, ...attachments.map((a) => a.storedPath));
     await logChange(user, {
       entityType: 'component',
       entityId: pcb.id,
@@ -165,10 +173,14 @@ export default async function pcbRoutes(app: FastifyInstance) {
       }),
       prisma.connection.findMany({
         where: { nodes: { some: { pcbConnector: { pcbId: id } } } },
-        select: { id: true, name: true, project: { select: { name: true } } },
+        select: { id: true, name: true, projectId: true, project: { select: { name: true } } },
       }),
     ]);
-    return { projects: projects.map((p) => p.project), connections };
+    const hidden = await hiddenProjectIds(req);
+    return {
+      projects: projects.map((p) => p.project).filter((p) => !hidden.has(p.id)),
+      connections: connections.filter((c) => !hidden.has(c.projectId)),
+    };
   });
 
   // ----- Connectors drawn on a PCB (autosaved by the editor via idempotent upsert) -----
@@ -224,6 +236,7 @@ export default async function pcbRoutes(app: FastifyInstance) {
       select: { id: true, name: true, projectId: true },
       orderBy: { name: 'asc' },
     });
-    return { connections };
+    const hidden = await hiddenProjectIds(req);
+    return { connections: connections.filter((c) => !hidden.has(c.projectId)) };
   });
 }

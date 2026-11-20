@@ -1,0 +1,10 @@
+{
+  "name": "Wire-Node",
+  "short_name": "Wire-Node",
+  "description": "Machine wiring documentation",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f4f6f9",
+  "theme_color": "#0f172a",
+  "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

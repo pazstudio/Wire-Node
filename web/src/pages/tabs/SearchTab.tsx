@@ -1,5 +1,5 @@
 import { useDeferredValue, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { api, type Connection } from '../../api';
 import { MiniDiagram } from '../../components/connectorConnections';
@@ -78,7 +78,7 @@ export default function SearchTab({ projectId }: { projectId: string }) {
                 to={`/projects/${projectId}/connections/${r.conn.id}`}
                 info={<span className="small muted">{r.conn.wires.length} wires</span>}
               >
-                <SearchHits hits={r.hits} />
+                <SearchHits hits={r.hits} projectId={projectId} query={deferred.trim()} />
               </MiniDiagram>
             ))}
           </div>
@@ -95,13 +95,26 @@ export default function SearchTab({ projectId }: { projectId: string }) {
   );
 }
 
-function SearchHits({ hits }: { hits: NodeHit[] }) {
+function SearchHits({ hits, projectId, query }: { hits: NodeHit[]; projectId: string; query: string }) {
   if (!hits.length) return null;
   return (
     <ul className="search-hits small">
       {hits.slice(0, MAX_HITS_SHOWN).map((h) => (
         <li key={h.nodeId}>
           <strong>{h.name}</strong>
+          {h.pcbId && h.connectorId && (
+            <>
+              {' '}
+              <Link
+                className="small"
+                to={`/projects/${projectId}/pcbs/${h.pcbId}?connector=${h.connectorId}&find=${encodeURIComponent(query)}`}
+                onClick={(e) => e.stopPropagation()}
+                title="Show this connector on the component photo"
+              >
+                on photo →
+              </Link>
+            </>
+          )}
           {h.pins.length > 0 && (
             <ul>
               {h.pins.map((p) => (

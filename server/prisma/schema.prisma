@@ -9,23 +9,29 @@ datasource db {
 
 /// A machine project. PCBs are placed in projects; connections and zones belong to one project.
 model Project {
-  id           String          @id @default(uuid())
-  name         String
-  machine      String          @default("")
-  description  String          @default("")
+  id              String           @id @default(uuid())
+  name            String
+  machine         String           @default("")
+  description     String           @default("")
   /// Set when the project is locked (e.g. the device shipped). A locked project cannot be changed
   /// and uses its own frozen copies of library components, connector types and cables.
-  lockedAt     DateTime?
-  createdAt    DateTime        @default(now())
-  updatedAt    DateTime        @updatedAt
-  pcbs         ProjectPcb[]
-  folders      Folder[]
-  connections  Connection[]
-  zones        Zone[]
-  frozenPcbs   Pcb[]
-  frozenTypes  ConnectorType[]
-  frozenCables Cable[]
-  wiringExports WiringExport[]
+  lockedAt        DateTime?
+  /// Only members (ProjectMember) and admins can see a restricted project.
+  restricted      Boolean          @default(false)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  pcbs            ProjectPcb[]
+  folders         Folder[]
+  connections     Connection[]
+  zones           Zone[]
+  frozenPcbs      Pcb[]
+  frozenTypes     ConnectorType[]
+  frozenCables    Cable[]
+  wiringExports   WiringExport[]
+  wireChecks      WireCheck[]
+  checkDismissals CheckDismissal[]
+  units           Unit[]
+  members         ProjectMember[]
 }
 
 /// One download of a project's wiring summary. Compared with the current summary to tell
@@ -77,6 +83,7 @@ model Pcb {
   frozenIn          Project?       @relation(fields: [frozenInProjectId], references: [id], onDelete: Cascade)
   projects          ProjectPcb[]
   connectors        PcbConnector[]
+  attachments       Attachment[]
 
   @@index([frozenInProjectId])
 }
@@ -95,6 +102,8 @@ model ProjectPcb {
   mapY      Float            @default(0)
   /// Folder on the Components tab; null = not in a folder. Deleting a folder keeps its components.
   folderId  String?
+  /// Board address for firmware config export, e.g. "1" for a CAN expansion board, "20" for a toolboard; "" = main board / not a controller.
+  fwAddress String           @default("")
   project   Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
   pcb       Pcb              @relation(fields: [pcbId], references: [id], onDelete: Cascade)
   folder    Folder?          @relation(fields: [folderId], references: [id], onDelete: SetNull)
@@ -138,6 +147,7 @@ model PcbConnector {
   w               Float
   h               Float
   rotation        Float            @default(0)
+  /// [{ n, name, color, current? }]; current = max current of the pin in A (for the design checks).
   pins            Json             @default("[]")
   /// On a frozen copy: the library connector it was copied from.
   sourceId        String?
@@ -269,23 +279,25 @@ model Group {
 }
 
 model User {
-  id                 String      @id @default(uuid())
+  id                 String          @id @default(uuid())
   /// Lower case, used to sign in.
-  username           String      @unique
-  displayName        String      @default("")
+  username           String          @unique
+  displayName        String          @default("")
   /// scrypt$<salt>$<hash>, see hashPassword in auth.ts.
   passwordHash       String
   groupId            String
-  disabled           Boolean     @default(false)
+  disabled           Boolean         @default(false)
   /// Set for a new account, a password reset by an admin, and the first-start admin/admin account.
-  mustChangePassword Boolean     @default(false)
-  createdAt          DateTime    @default(now())
+  mustChangePassword Boolean         @default(false)
+  createdAt          DateTime        @default(now())
   lastLoginAt        DateTime?
   /// Overrides the group's "changes.skipReason": true = never asked for a reason, false = always asked, null = as the group.
   skipReason         Boolean?
-  group              Group       @relation(fields: [groupId], references: [id])
+  group              Group           @relation(fields: [groupId], references: [id])
   sessions           Session[]
   changes            ChangeLog[]
+  apiTokens          ApiToken[]
+  projectMemberships ProjectMember[]
 }
 
 /// A signed-in browser. The cookie holds a random token; only its SHA-256 is stored.
@@ -341,4 +353,127 @@ model Setting {
   key       String   @id
   value     Json
   updatedAt DateTime @updatedAt
+}
+
+// ---------------------------------------------------------------------------------------------
+// Building and keeping the machine
+// ---------------------------------------------------------------------------------------------
+
+/// A wire ticked off on the build checklist: "crimped" (made) or "tested" (continuity checked).
+/// Not a foreign key to Wire: saving a connection rewrites its wires (with the same ids), and the
+/// tick must survive that. `fingerprint` records the wire's ends and type when it was ticked, so a
+/// wire that was moved since shows as "changed since ticked" instead of done.
+model WireCheck {
+  wireId       String
+  step         String
+  projectId    String
+  connectionId String
+  fingerprint  String
+  doneAt       DateTime @default(now())
+  doneBy       String
+  /// Machine built from the project (Unit.id); "" = the project itself, without units.
+  unitId       String   @default("")
+  /// For "tested": false = the test failed (see note).
+  ok           Boolean  @default(true)
+  note         String   @default("")
+  project      Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@id([wireId, step, unitId])
+  @@index([projectId, unitId])
+}
+
+/// One machine built from a project, e.g. serial "RC4-003". It has its own build checklist and
+/// comments ("J3 replaced on unit #3").
+model Unit {
+  id        String   @id @default(uuid())
+  projectId String
+  serial    String
+  notes     String   @default("")
+  /// "building", "tested", "shipped" or "retired".
+  status    String   @default("building")
+  createdAt DateTime @default(now())
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, serial])
+}
+
+/// Who may see a restricted project (Project.restricted). Admins always can.
+model ProjectMember {
+  projectId String
+  userId    String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([projectId, userId])
+}
+
+/// A comment on a connection, a component or a project, e.g. "J3 cracked on unit #3".
+/// Comments can be resolved (kept, but shown as done).
+model Comment {
+  id         String    @id @default(uuid())
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  /// Project the comment was made in (components are shared; their comments show in every project).
+  projectId  String?
+  /// "connection", "component" or "project".
+  entityType String
+  entityId   String
+  userId     String?
+  userName   String
+  body       String
+  /// Usernames mentioned with @name.
+  mentions   String[]  @default([])
+  resolvedAt DateTime?
+  resolvedBy String?
+
+  @@index([entityType, entityId])
+  @@index([projectId])
+}
+
+/// A file attached to a library component: datasheet, pinout, scope screenshot…
+model Attachment {
+  id         String   @id @default(uuid())
+  pcbId      String
+  /// Original file name, shown and used for downloads.
+  fileName   String
+  /// File in the uploads folder (UUID name).
+  storedPath String
+  mimeType   String
+  size       Int
+  createdAt  DateTime @default(now())
+  uploadedBy String
+  pcb        Pcb      @relation(fields: [pcbId], references: [id], onDelete: Cascade)
+
+  @@index([pcbId])
+}
+
+/// Read-only API token, for scripts (e.g. pulling the wiring summary in CI). Sent as
+/// "Authorization: Bearer wn_…". Only a SHA-256 of the token is stored. Acts as its user, read-only.
+model ApiToken {
+  id         String    @id @default(uuid())
+  userId     String
+  name       String
+  tokenHash  String    @unique
+  /// First characters of the token, to tell tokens apart in the list.
+  prefix     String
+  createdAt  DateTime  @default(now())
+  lastUsedAt DateTime?
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+/// A design-check finding marked as intended (e.g. two Peltier modules wired in series look like a
+/// 24V-GND short). `key` identifies the finding by its kind and the pins involved, so it comes back
+/// when the wiring changes.
+model CheckDismissal {
+  projectId   String
+  key         String
+  title       String
+  note        String   @default("")
+  dismissedBy String
+  dismissedAt DateTime @default(now())
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@id([projectId, key])
 }

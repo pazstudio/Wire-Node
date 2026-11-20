@@ -57,6 +57,8 @@ export interface AuthUser {
   /** Changes need no reason (group permission, or the user's own override). */
   skipReason: boolean;
   mustChangePassword: boolean;
+  /** Signed in with a read-only API token: no permissions, GET requests only. */
+  viaToken?: boolean;
 }
 
 declare module 'fastify' {
@@ -200,6 +202,24 @@ async function userFromSession(req: FastifyRequest): Promise<AuthUser | null> {
   return toAuthUser(session.user);
 }
 
+// ---------- Read-only API tokens ----------
+
+export const TOKEN_PREFIX = 'wn_';
+
+/** The user of a valid "Authorization: Bearer wn_…" token, as a read-only user (no permissions). */
+async function userFromToken(req: FastifyRequest): Promise<AuthUser | null | 'invalid'> {
+  const h = req.headers.authorization;
+  if (!h) return null;
+  const m = /^Bearer\s+(\S+)$/i.exec(h);
+  if (!m || !m[1].startsWith(TOKEN_PREFIX)) return 'invalid';
+  const token = await prisma.apiToken.findUnique({ where: { tokenHash: tokenId(m[1]) }, include: { user: { include: userInclude } } });
+  if (!token || token.user.disabled) return 'invalid';
+  if (!token.lastUsedAt || Date.now() - token.lastUsedAt.getTime() > 3600_000) {
+    await prisma.apiToken.update({ where: { id: token.id }, data: { lastUsedAt: new Date() } });
+  }
+  return { ...toAuthUser(token.user), permissions: [], isAdmin: false, skipReason: false, mustChangePassword: false, viaToken: true };
+}
+
 /** Signs out every browser of a user (password change, account disabled or deleted). */
 export async function endSessions(userId: string, exceptToken?: string | null) {
   await prisma.session.deleteMany({ where: { userId, ...(exceptToken ? { NOT: { id: tokenId(exceptToken) } } : {}) } });
@@ -267,6 +287,15 @@ export async function registerAuth(app: FastifyInstance) {
       if (originHost !== host) return reply.code(403).send({ message: 'Request from another site refused' });
     }
 
+    const fromToken = await userFromToken(req);
+    if (fromToken === 'invalid') return reply.code(401).send({ message: 'Invalid or revoked API token', code: 'BAD_TOKEN' });
+    if (fromToken) {
+      if (req.method !== 'GET' && req.method !== 'HEAD') {
+        return reply.code(403).send({ message: 'API tokens are read-only' });
+      }
+      req.user = fromToken;
+      return;
+    }
     req.user = (await userFromSession(req)) ?? undefined;
     if (PUBLIC.has(url)) return;
     if (!req.user) return reply.code(401).send({ message: 'Please sign in', code: 'SIGN_IN' });
@@ -328,6 +357,37 @@ export async function registerAuth(app: FastifyInstance) {
       data: { passwordHash: await hashPassword(newPassword), mustChangePassword: false },
     });
     await endSessions(me.id, readCookie(req, COOKIE));
+    return { ok: true };
+  });
+}
+
+/** Routes to manage the signed-in user's own read-only API tokens. */
+export async function tokenRoutes(app: FastifyInstance) {
+  app.get('/api/auth/tokens', async (req) => {
+    const me = currentUser(req);
+    return prisma.apiToken.findMany({
+      where: { userId: me.id },
+      select: { id: true, name: true, prefix: true, createdAt: true, lastUsedAt: true },
+      orderBy: { createdAt: 'desc' },
+    });
+  });
+
+  // The token is shown once, in this response; only its hash is stored.
+  app.post('/api/auth/tokens', async (req, reply) => {
+    const me = currentUser(req);
+    const { name } = z.object({ name: z.string().trim().min(1, 'Give the token a name').max(100) }).parse(req.body);
+    if ((await prisma.apiToken.count({ where: { userId: me.id } })) >= 20) throw httpError(400, 'You have 20 tokens already; delete one first');
+    const token = `${TOKEN_PREFIX}${randomBytes(24).toString('base64url')}`;
+    const row = await prisma.apiToken.create({
+      data: { userId: me.id, name, tokenHash: tokenId(token), prefix: token.slice(0, TOKEN_PREFIX.length + 4) },
+      select: { id: true, name: true, prefix: true, createdAt: true, lastUsedAt: true },
+    });
+    return reply.code(201).send({ ...row, token });
+  });
+
+  app.delete<{ Params: { id: string } }>('/api/auth/tokens/:id', async (req) => {
+    const me = currentUser(req);
+    await prisma.apiToken.deleteMany({ where: { id: req.params.id, userId: me.id } });
     return { ok: true };
   });
 }

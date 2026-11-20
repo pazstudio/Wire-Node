@@ -8,6 +8,8 @@ import ProjectMapPage from './pages/ProjectMapPage';
 import AdminPage from './pages/AdminPage';
 import { ProjectMenu, QuickSwitcherButton, RecentDrawer } from './components/navigation';
 import { ShortcutsButton } from './components/shortcuts';
+import { MentionsButton } from './components/comments';
+import { OfflineBanner } from './components/offline';
 import { AuthGate, UserMenu } from './auth';
 import { ReasonProvider } from './components/reason';
 
@@ -23,10 +25,12 @@ export default function App() {
             <ProjectMenu />
             <nav className="topnav">
               <QuickSwitcherButton />
+              <MentionsButton />
               <ShortcutsButton />
               <UserMenu />
             </nav>
           </header>
+          <OfflineBanner />
           <RecentDrawer />
           <main className="main">
             <Routes>
